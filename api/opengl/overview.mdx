@@ -1,7 +1,7 @@
 ---
-title: "OpenGL Element API: GLX Surface Integration"
+title: "LWXGL OpenGL GLX Pixmap Surface Element Integration"
 sidebarTitle: "OpenGL"
-description: "Create a GLX-backed OpenGL surface element, manage contexts, synchronize rendering, and convert TGA images to OpenGL textures."
+description: "Create a GLX-backed OpenGL surface element, manage rendering contexts, synchronize output, and convert TGA assets to OpenGL textures."
 ---
 
 LWXGL can host an OpenGL rendering surface as a first-class window element by creating a `GLXPixmap`-backed `OpenGLElement`. The surface composites seamlessly into the LWXGL back-buffer alongside other retained elements (text, buttons, image canvases) without requiring a separate window. You switch the active GLX context before issuing OpenGL commands, render into the pixmap, synchronize with `SynchronizeOpenGL`, then let LWXGL composite the result every frame. TGA assets already loaded into the LWXGL cache can be uploaded to GPU memory in one call via `GLConvertTGA`.
@@ -20,7 +20,7 @@ int CreateOpenGL(int id, int x, int y, int w, int h, int border);
 
 LWXGL queries `glXChooseFBConfig` for an FBConfig that is renderable, pixmap-drawable, RGBA, non-double-buffered, with 8 bits each for red, green, blue, and alpha channels, a 24-bit depth buffer, and an 8-bit stencil buffer. It then walks the returned list until it finds a config whose associated visual matches the current display depth. A `GLXPixmap` and a `GLXContext` are created from the matching config.
 
-When `border` is a valid palette index (≥ 0), the element's stored dimensions are expanded by 1 pixel on all sides (`w + 2`, `h + 2`) and LWXGL draws a 1-pixel border in that color when compositing the element. Pass `CLR_NONE` (`-1`) for no border.
+When `border` is a valid palette index (≥ 0), the element's stored dimensions are expanded by 1 pixel on all sides (`w + 2`, `h + 2`) and LWXGL draws a 1-pixel border in that color when compositing the element. The underlying GLX pixmap and OpenGL rendering viewport remain at the original `w × h` size — only the element's layout footprint grows. Pass `CLR_NONE` (`-1`) for no border.
 
 **Returns:** `1` on success, `0` if the depth requirement is not met or no compatible `FBConfig` is found.
 

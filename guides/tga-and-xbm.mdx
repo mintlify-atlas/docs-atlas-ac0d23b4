@@ -1,7 +1,7 @@
 ---
-title: "Loading TGA and XBM Images in LWXGL"
+title: "Loading and Rendering TGA and XBM Image Files in LWXGL"
 sidebarTitle: "TGA & XBM"
-description: "Load 8-bit indexed TGA files and monochrome XBM bitmaps, render them into image elements, optionally remap the palette, and capture screen regions as TGA buffers."
+description: "Load 8-bit indexed TGA files and monochrome XBM bitmaps, render them into image elements, remap the palette, and capture screen regions as TGA buffers."
 ---
 
 LWXGL supports two image formats natively: 8-bit color-mapped TGA (raw and RLE-compressed) and monochrome XBM bitmaps. Images are loaded into a named allocator cache and drawn into image canvas elements. Because LWXGL's renderer is palette-indexed, both formats map cleanly onto the 16-color palette without any color-space conversion at draw time.

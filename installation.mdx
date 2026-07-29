@@ -1,5 +1,5 @@
 ---
-title: "Install LWXGL on Linux"
+title: "How to Build, Install, and Link libLWXGL.so on Linux"
 sidebarTitle: "Installation"
 description: "Build libLWXGL.so from source with make, install the shared library and header to /usr/local/lib and /usr/local/include, then link against it."
 ---
@@ -48,7 +48,7 @@ sudo dnf install gcc-c++ libX11-devel mesa-libGL-devel make
     make
     ```
 
-    The Makefile compiles all sources with `g++ -std=gnu++17 -fPIC -shared` and links against `-lX11 -lGL`. The default optimization level is `-O2`; you can override it with the `O=` variable:
+    The Makefile compiles all sources with `g++ -std=gnu++17 -D_GNU_SOURCE -fPIC -shared -fvisibility=hidden` and links against `-lX11 -lGL`. The default optimization level is `-O2`; you can override it with the `O=` variable:
 
     ```bash
     make O=3   # maximum optimization
@@ -124,5 +124,5 @@ gcc verify.c -o verify -lLWXGL -lX11 -lGL
 A window will flash briefly on screen and close. A clean exit (status 0) confirms that the library is installed and linked correctly.
 
 <Note>
-`CreateWindow` returns `0` on success. It returns `1` if `XOpenDisplay` fails (no display available), `2` if the default X11 bitmap font cannot be loaded, and `3` if a window is already open. Values `128`–`143` indicate that Xlib was unable to allocate one of the 16 palette colors.
+`CreateWindow` returns `0` on success. It returns `1` if `XOpenDisplay` fails (no display available), `2` if the default X11 bitmap font cannot be loaded, and `3` if a window is already open. Values `127`–`142` indicate that Xlib was unable to allocate one of the 16 palette colors (return value `127 + i` for palette index `i`).
 </Note>

@@ -1,7 +1,7 @@
 ---
-title: "LWXGL: Lightweight X11 Graphics Library for C/C++"
+title: "LWXGL — Lightweight X11 Graphics Library for C/C++"
 sidebarTitle: "Introduction"
-description: "LWXGL is a lightweight shared library that wraps Xlib to provide a retained element system, image canvas, OpenGL surfaces, and event callbacks for Linux GUI apps."
+description: "LWXGL wraps Xlib to provide a retained element system, image canvas, OpenGL surfaces, and event callbacks for Linux GUI apps in C/C++."
 ---
 
 LWXGL (Lightweight X11 Graphics Library) is a C/C++ shared library (`libLWXGL.so`) that wraps Xlib to make building Linux GUI applications straightforward without pulling in a heavyweight toolkit. Its design philosophy centres on three ideas: a **retained element system** where you assign integer IDs to every widget and LWXGL tracks their state across frames; a **fixed 16-color palette** that maps symbolic names such as `CLR_BLUE` or `CLR_WHITE` to Xlib pixel values at startup; and a **double-buffered main loop** that composites all elements onto a back-buffer pixmap before blitting to the screen, giving flicker-free rendering at a configurable frame rate.

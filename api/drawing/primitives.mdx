@@ -1,5 +1,5 @@
 ---
-title: "Image Primitive Drawing Functions"
+title: "LWXGL Image Primitive Drawing: Rects, Circles, and Lines"
 sidebarTitle: "Primitives"
 description: "Draw rectangles, circles, lines, triangles, and RLE sprites directly into image element pixel buffers using palette-indexed colors."
 ---
@@ -14,10 +14,10 @@ Draws a filled rectangle with an optional border into an image element.
 void PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg);
 ```
 
-The left, right, top, and bottom edges are drawn with `fg`; every interior pixel uses `bg`. Pass `CLR_NONE` (`-1`) for either parameter to omit that layer — passing `CLR_NONE` for `fg` but a valid `bg` draws a filled rectangle with no visible border, while passing `CLR_NONE` for both is a no-op.
+The left, right, top, and bottom edges are drawn with `fg`; every interior pixel uses `bg`. At the start of the function, if `fg == -1` the implementation sets `fg = bg` before drawing — so passing `CLR_NONE` for `fg` causes the border to be drawn in the same color as the fill, making it visually indistinguishable from a solid filled rectangle. Only passing `CLR_NONE` for `bg` actually skips filling the interior.
 
 <Note>
-When `fg` is `CLR_NONE` the implementation promotes `bg` to fill the border pixels as well, so the border is never left transparent when a fill color is provided.
+Passing `CLR_NONE` (`-1`) for `fg` does **not** omit the border — it redirects the border color to `bg`, producing a uniformly filled solid rectangle. To draw a border without fill, pass a valid `fg` and `CLR_NONE` for `bg`. Passing `CLR_NONE` for both is a no-op.
 </Note>
 
 <ParamField path="id" type="int" required>
@@ -41,7 +41,7 @@ When `fg` is `CLR_NONE` the implementation promotes `bg` to fill the border pixe
 </ParamField>
 
 <ParamField path="fg" type="int" required>
-  Palette index (0–15) for the border color, or `CLR_NONE` (`-1`) to omit the border.
+  Palette index (0–15) for the border color. Passing `CLR_NONE` (`-1`) causes the border to be drawn in the same color as `bg` rather than omitting it.
 </ParamField>
 
 <ParamField path="bg" type="int" required>
@@ -210,7 +210,7 @@ The sprite string is decoded character-by-character. Each logical pixel is rende
 |-------|---------|
 | `#` | Draw one foreground pixel (palette index `color`) and advance X by `scale`. |
 | `.` | Draw one background pixel (palette index `0` / `CLR_BLACK`) and advance X by `scale`. |
-| `$` | Move X back to `sx` and advance Y by `scale` (next row). |
+| `$` | Move X back to `sx` and advance Y by `runs × scale` (1 row by default; a digit prefix `N$` skips `N` rows). |
 | `>` | Skip (advance X) without drawing — useful for transparent gaps. |
 | `0`–`9` | Prefix digit(s) — sets the repeat count for the following token. |
 | `[…]` | Group: repeat the bracketed sub-expression. A numeric prefix sets the repeat count (default 1). Groups may be nested. |
@@ -223,7 +223,7 @@ The sprite string is decoded character-by-character. Each logical pixel is rende
 | `2.` | Two consecutive background pixels. |
 | `3#2.$` | Three foreground pixels, two background pixels, then newline. |
 | `2[3#.]` | The sequence `3#.` repeated twice → `3#.3#.`. |
-| `>5` | Advance five pixels without drawing (transparent gap). |
+| `5>` | Advance five pixels without drawing (transparent gap). |
 
 <Note>
 The `>` token with a numeric prefix (`5>`) advances `count × scale` pixels, making it efficient for transparent horizontal gaps in icons or HUD sprites.

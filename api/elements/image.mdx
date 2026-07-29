@@ -109,7 +109,7 @@ Installs a bitmap font into the image element for use with `DrawString`. The fon
 </ParamField>
 
 <ParamField path="font" type="unsigned char*" required>
-  Pointer to the font bitmap data. The buffer must be exactly `256 * h` bytes. The layout is one entry per ASCII character code (0–255), each entry being `h` bytes. Each byte is a column-major row bitmap: bit 7 (MSB) is the leftmost pixel, covering 8 pixels wide per row.
+  Pointer to the font bitmap data. The buffer must be exactly `256 * h` bytes. The layout is one entry per ASCII character code (0–255), each entry being `h` bytes. Each byte represents one horizontal row of 8 pixels: bit 7 (MSB) is the leftmost pixel and bit 0 (LSB) is the rightmost pixel.
 </ParamField>
 
 <ParamField path="h" type="int" required>

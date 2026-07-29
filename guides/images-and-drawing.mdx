@@ -1,7 +1,7 @@
 ---
-title: "Drawing to Image Elements and Pixel Primitives"
+title: "Drawing to Image Elements and Pixel Primitives in LWXGL"
 sidebarTitle: "Images & Drawing"
-description: "Create an image canvas element, write palette-indexed pixel data, and use built-in primitive functions to draw rectangles, circles, lines, triangles, and sprites."
+description: "Create an image canvas, write palette-indexed pixel data, and use primitive functions to draw rectangles, circles, lines, triangles, and sprites."
 ---
 
 Image elements provide a pixel-level canvas you can write to with palette color indices, then flush to screen with `UpdateImage`. Unlike other LWXGL elements that are declarative, image elements expose a raw byte buffer so you can implement any rendering logic — from simple fills to custom bitmap fonts — entirely in C.
@@ -81,11 +81,14 @@ LWXGL provides several built-in drawing routines that write directly into an ima
 void PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg);
 ```
 
-Draws a filled rectangle. `fg` is the border (outline) color and `bg` is the fill color. Pass `CLR_NONE` (`-1`) for either to skip that layer. If `fg` is `CLR_NONE` the border is omitted; if `bg` is `CLR_NONE` only the border is drawn.
+Draws a filled rectangle. `fg` is the border (outline) color and `bg` is the fill color. If `fg` is `CLR_NONE` (`-1`), it is treated as equal to `bg` — the border is drawn in the fill color rather than skipped. Pass `CLR_NONE` for `bg` to skip filling interior pixels entirely, drawing only the border.
 
 ```c
-/* Solid filled rectangle */
+/* Solid filled rectangle with white border and blue fill */
 PrimitiveRect(0, 10, 10, 80, 50, CLR_WHITE, CLR_BLUE);
+
+/* Uniform rectangle — border drawn in fill color (fg becomes bg) */
+PrimitiveRect(0, 10, 10, 80, 50, CLR_NONE, CLR_BLUE);
 
 /* Border only, no fill */
 PrimitiveRect(0, 100, 10, 80, 50, CLR_RED, CLR_NONE);
@@ -97,7 +100,7 @@ PrimitiveRect(0, 100, 10, 80, 50, CLR_RED, CLR_NONE);
 void PrimitiveCircle(int id, int cx, int cy, int r, int fg, int bg);
 ```
 
-Draws a filled circle centered at `(cx, cy)` with radius `r`. `fg` is the border color and `bg` is the fill color. As with `PrimitiveRect`, pass `CLR_NONE` for either to omit it.
+Draws a filled circle centered at `(cx, cy)` with radius `r`. `fg` is the border color and `bg` is the fill color. Pass `CLR_NONE` (`-1`) for `fg` to skip drawing the border, or for `bg` to skip drawing the fill.
 
 ```c
 /* Filled circle with border */
@@ -137,7 +140,7 @@ void PrimitiveSprite(int id, int sx, int sy, int color, const char *sprite, int 
 Draws a monochrome sprite encoded as an RLE string (see [Sprite RLE Format](#sprite-rle-format) below). `sx` and `sy` are the top-left draw position. `color` is the palette index used for filled pixels — background pixels (`'.'`) are always drawn as `CLR_BLACK` (index 0). `scale` is an integer pixel multiplier: `1` for 1:1, `2` for double-size, and so on.
 
 ```c
-const char *arrow = "2>H$H>3#$5#$H>3#$2>H";
+const char *arrow = "2>#$#>3#$5#$#>3#$2>#";
 PrimitiveSprite(0, 50, 50, CLR_WHITE, arrow, 2);
 ```
 
@@ -156,7 +159,7 @@ Sprites passed to `PrimitiveSprite` use a compact run-length encoding string. Th
 
 A digit or sequence of digits before a character or group sets the **repeat count** for that token. A repeat count of zero means the default of 1.
 
-```
+```text
 3#    →  ###          (three filled pixels)
 2.    →  ..           (two background pixels)
 3>    →               (skip three pixels)
@@ -173,16 +176,16 @@ A digit or sequence of digits before a character or group sets the **repeat coun
  *   ..#..
  *   ..#..
  */
-const char *cross = "2>H$2>H$5#$2>H$2>H";
+const char *cross = "2>#$2>#$5#$2>#$2>#";
 PrimitiveSprite(0, 10, 10, CLR_WHITE, cross, 1);
 ```
 
 Breaking down the string token by token:
 - `2>` — skip 2 pixels
-- `H` — draw 1 filled pixel (`H` is not a special token, but `#` is — use `#` in practice; `H` was used as a placeholder above; replace with `#`)
-- `$` — newline
+- `#` — draw 1 filled pixel
+- `$` — move to the next row (reset x to `sx`, advance y by `scale`)
 - `5#` — draw 5 filled pixels on row 3
-- `$` — newline, and so on
+- `$` — move to the next row, and so on
 
 <Note>
 The `'!'` character acts as an early-terminator inside the RLE parser and will stop sprite rendering if it appears in the string. Do not use `'!'` in sprite data.

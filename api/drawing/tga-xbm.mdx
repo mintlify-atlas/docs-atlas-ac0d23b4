@@ -1,5 +1,5 @@
 ---
-title: "TGA and XBM Image Loading API"
+title: "LWXGL TGA and XBM Image Loading, Drawing, and Capture"
 sidebarTitle: "TGA & XBM API"
 description: "Allocate, draw, and free TGA and XBM images into LWXGL image element canvases. Includes memory-backed TGA loading and screen region capture."
 ---
@@ -52,6 +52,10 @@ int AllocateMemoryTGA(const char* name, const char* buffer, int size, int change
 
 Internally creates an anonymous `memfd` file descriptor, writes `buffer` into it, then calls `AllocateTGA` via the `/proc/self/fd/N` path. The file descriptor is closed immediately after loading. Useful for embedding TGA assets in compiled code as byte arrays or for loading images received over a network.
 
+<Warning>
+Due to a parameter-swap bug in the implementation, `change_palette` and `transparent` are passed to the internal `AllocateTGA` call in **reversed order**. In practice, the value you pass as `change_palette` is used as the `transparent` index, and the value you pass as `transparent` is used as the `change_palette` flag. Pass `transparent` where the signature says `change_palette` and vice versa until this is corrected upstream.
+</Warning>
+
 <ParamField path="name" type="const char*" required>
   Unique cache key for the loaded TGA.
 </ParamField>
@@ -65,11 +69,11 @@ Internally creates an anonymous `memfd` file descriptor, writes `buffer` into it
 </ParamField>
 
 <ParamField path="change_palette" type="int" required>
-  Same as in `AllocateTGA` — non-zero causes palette replacement on draw.
+  Non-zero to apply the TGA's embedded palette to the global LWXGL palette on draw. **Note:** due to the parameter-swap bug described above, pass this value in the `transparent` argument position to get the intended behavior.
 </ParamField>
 
 <ParamField path="transparent" type="int" required>
-  Transparent palette index, or `-1` for none.
+  Palette index (0–15) to treat as transparent, or `-1` for none. **Note:** due to the parameter-swap bug, pass this value in the `change_palette` argument position to get the intended behavior.
 </ParamField>
 
 ---
@@ -257,7 +261,7 @@ The returned buffer must be freed by the caller. Failing to call `free()` on it 
 
 ## Code example
 
-```c
+```cpp
 #include "libLWXGL.h"
 #include <stdlib.h>
 #include <stdio.h>

@@ -77,13 +77,13 @@ This affects only the global X11 GC font used for `CreateText` / `CreateButton` 
 ## `EnableResizing`
 
 ```c
-void EnableResizing(void (*Resize)(int w, int h));
+void EnableResizing(void (*Resize)(int x, int y));
 ```
 
 Removes the fixed-size window manager hints set by `CreateWindow`, allowing the user to resize the window freely. When a resize event arrives, the back-buffer pixmap is recreated at the new dimensions and the `Resize` callback is fired.
 
-<ParamField path="Resize" type="void (*)(int w, int h)" required>
-  Callback invoked with the new window dimensions whenever the window is resized. Use this to reposition or rescale elements. In scroll mode, only the width can change — the height remains fixed at the virtual canvas height.
+<ParamField path="Resize" type="void (*)(int x, int y)" required>
+  Callback invoked with the new window dimensions whenever the window is resized. Use this to reposition or rescale elements. In scroll mode, the window height is capped at the virtual canvas height set by `ReserveScroll` — only the width can grow freely.
 </ParamField>
 
 <Warning>
@@ -156,9 +156,9 @@ The handles returned are owned by LWXGL. Do not free or destroy them. Any change
 ```c
 #include "libLWXGL.h"
 
-static void on_resize(int w, int h) {
+static void on_resize(int x, int y) {
     /* Re-center a label element when the window is resized */
-    ElemModifyBounds(0, w / 2 - 50, 20, 100, 20);
+    ElemModifyBounds(0, x / 2 - 50, 20, 100, 20);
 }
 
 static void on_scroll(int offset) {

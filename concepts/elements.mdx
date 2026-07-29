@@ -1,5 +1,5 @@
 ---
-title: "Element System: IDs, Types, and Lifecycle"
+title: "LWXGL Element System: IDs, Types, and Lifecycle Management"
 sidebarTitle: "Elements"
 description: "LWXGL uses a retained-mode element system where each UI component is assigned a developer-chosen integer ID that persists for the window's lifetime."
 ---
@@ -84,13 +84,15 @@ Hit-testing uses the element's current `(x, y, w, h)` bounds, so it respects any
 
 ## Anchoring (Scroll Mode)
 
-When scroll mode is active (enabled via `ReserveScroll` before `CreateWindow`), the virtual canvas is taller than the physical window. Use `ElemAnchor` to pin a set of elements so they stay fixed relative to the current scroll position, rather than scrolling with the canvas:
+When scroll mode is active (enabled via `ReserveScroll` before `CreateWindow`), the virtual canvas is taller than the physical window. Use `ElemAnchor` to pin a set of elements so they stay fixed relative to the current scroll position, rather than scrolling with the canvas.
+
+`ElemAnchor` takes a flag as its first argument: pass any non-zero value to anchor the elements (storing their current `y` positions), or pass `0` to un-anchor them:
 
 ```c
 int hud_ids[] = {ID_BTN_OK, ID_TITLE};
 
-// Anchor elements at offset 10 from the current scroll position
-ElemAnchor(10, hud_ids, 2);
+// Anchor these elements at their current y positions
+ElemAnchor(1, hud_ids, 2);
 ```
 
 Call `ResolveAnchors()` each frame (inside `on_every`) to recalculate the screen position of all anchored elements based on the current scroll offset:
@@ -102,7 +104,7 @@ void on_every(int tick, float dt) {
 }
 ```
 
-To un-anchor elements, call `ElemAnchor(0, ids, count)` — this resets their anchor and restores their `y` position to the anchor value that was stored.
+To un-anchor elements, call `ElemAnchor(0, ids, count)` — this restores their `y` position to the value that was stored when they were anchored, and clears the anchor.
 
 ## Deletion
 
@@ -116,16 +118,16 @@ Depending on the element type, this may also free associated resources — for e
 
 ## Rendering Order
 
-By default, elements are drawn to the back-buffer **before** the `on_every` callback runs (`ORDER_ELEM_FIRST`). This means anything you draw inside `on_every` using immediate-mode functions appears on top of retained elements.
+By default, the `on_every` callback runs **before** elements are drawn (`ORDER_ELEM_SECOND`), meaning retained elements appear on top of anything drawn with immediate-mode calls inside `on_every`.
 
 Call `SetRenderingOrder` to swap the order:
 
 ```c
-// Elements render first, then on_every draws on top (default)
-SetRenderingOrder(ORDER_ELEM_FIRST);   // ORDER_ELEM_FIRST = 1
-
-// on_every callback runs first, then elements render on top
+// on_every callback runs first, then elements render on top (default)
 SetRenderingOrder(ORDER_ELEM_SECOND);  // ORDER_ELEM_SECOND = 0
+
+// Elements render first, then on_every draws on top
+SetRenderingOrder(ORDER_ELEM_FIRST);   // ORDER_ELEM_FIRST = 1
 ```
 
 The constants are defined in `libLWXGL.h` as `ORDER_ELEM_FIRST = 1` and `ORDER_ELEM_SECOND = 0`.

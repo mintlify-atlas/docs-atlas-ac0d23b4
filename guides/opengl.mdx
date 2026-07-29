@@ -1,7 +1,7 @@
 ---
-title: "Embedding OpenGL in an LWXGL Window"
+title: "Embedding a Hardware-Accelerated OpenGL Surface in LWXGL"
 sidebarTitle: "OpenGL"
-description: "Create a GLX-backed OpenGL surface element inside an LWXGL window, make it the active context, render with standard OpenGL calls, and synchronize before compositing."
+description: "Create a GLX-backed OpenGL surface inside an LWXGL window, make it the active context, issue OpenGL draw calls, and synchronize before compositing."
 ---
 
 LWXGL supports embedding a hardware-accelerated OpenGL surface inside a window via a GLX pixmap. The surface appears as a regular LWXGL element — sized and positioned like any other — but receives OpenGL draw calls instead of palette-indexed pixels. This lets you mix retained UI elements and OpenGL rendering in the same window without an additional toolkit or window split.

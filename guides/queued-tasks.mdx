@@ -1,5 +1,5 @@
 ---
-title: "Scheduling Queued Tasks in LWXGL"
+title: "Scheduling One-Shot and Repeating Queued Tasks in LWXGL"
 sidebarTitle: "Queued Tasks"
 description: "Schedule one-shot or repeating callbacks with NewQueuedTask to run deferred work inside the LWXGL render loop without blocking the frame."
 ---
@@ -63,7 +63,7 @@ For one-shot tasks (`TASK_RUN_AFTER`), the same flag pattern works equally well 
 
 When a `TASK_RUN_EVERY` task is registered, LWXGL computes its first fire time as:
 
-```
+```text
 first_fire = ceil(elapsed_time / interval) * interval
 ```
 

@@ -56,11 +56,12 @@ void TerminateWindow(void);
 
 Releases every resource that was allocated by `CreateWindow` and accumulated during the session. The teardown order is:
 
-1. Frees all live elements (calls `DeleteElement` on each non-NULL slot).
-2. Deletes all TGA allocations registered with `AllocateTGA`.
-3. Frees any active modal state message buffer.
-4. Frees the font (`XFreeFont`), GC (`XFreeGC`), back-buffer pixmap (`XFreePixmap`), and all 16 colormap entries (`XFreeColors`).
-5. Destroys the window (`XDestroyWindow`) and closes the display connection (`XCloseDisplay`).
+1. Releases the OpenGL context by calling `ChangeGLXContext(-1)`.
+2. Frees all live elements (calls `DeleteElement` on each non-NULL slot).
+3. Deletes all TGA allocations registered with `AllocateTGA`.
+4. Frees any active modal state message buffer.
+5. Frees the font (`XFreeFont`), GC (`XFreeGC`), back-buffer pixmap (`XFreePixmap`), and all 16 colormap entries (`XFreeColors`).
+6. Destroys the window (`XDestroyWindow`) and closes the display connection (`XCloseDisplay`).
 
 <Warning>
 Always call `TerminateWindow` after `MainWindowLoop` returns and before the process exits. Skipping it leaks X11 server-side resources for the duration of the display session.
@@ -76,7 +77,7 @@ void DeleteWindow(void);
 
 Signals the window that it should close. The exact behavior depends on whether an `EventAttachDelete` callback has been registered:
 
-- **With callback:** The registered function is called. If it returns **0**, the close is cancelled and the main loop continues running. If it returns any non-zero value, the closing flag is set.
+- **With callback:** The registered function is called. Its return value is assigned directly to the internal closing flag. If it returns **0**, the close is cancelled and the main loop continues running. If it returns any non-zero value, the closing flag is set.
 - **Without callback:** The closing flag is set immediately.
 
 Once the closing flag is set, `MainWindowLoop` exits after completing the current frame.

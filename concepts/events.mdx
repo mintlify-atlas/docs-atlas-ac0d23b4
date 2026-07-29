@@ -1,5 +1,5 @@
 ---
-title: "Events and Input Handling in LWXGL"
+title: "LWXGL Event System: Keyboard, Mouse, and Window Callbacks"
 sidebarTitle: "Events"
 description: "Register callbacks for keyboard, mouse, resize, scroll, and window-close events. Query mouse state and key state inside the per-frame callback."
 ---
@@ -12,8 +12,8 @@ LWXGL processes all X11 events inside `MainWindowLoop` at the start of each fram
 |---|---|---|
 | `EventAttachKey(callback)` | `void callback(int key)` | Called on each key press. Receives the ASCII character code or a special key constant. Not called when a focused element (Input, Console) consumes the keystroke. |
 | `EventAttachClick(callback)` | `void callback(int x, int y, int btn)` | Called on mouse button release when no element claims the click. `x` and `y` are the cursor position; `btn` is the button index (1=left, 2=middle, 3=right). |
-| `EventAttachDelete(callback)` | `int callback(void)` | Called when the window's close button is pressed (WM_DELETE_WINDOW). Return `1` to allow the window to close, or `0` to cancel and keep the window open. If no callback is registered the window always closes immediately. |
-| `EnableResizing(callback)` | `void callback(int w, int h)` | Called when the window is resized. Must be called **after** `CreateWindow`. Receives the new pixel width and height. |
+| `EventAttachDelete(callback)` | `int callback()` | Called when the window's close button is pressed (WM_DELETE_WINDOW). Return `1` to allow the window to close, or `0` to cancel and keep the window open. If no callback is registered the window always closes immediately. |
+| `EnableResizing(callback)` | `void callback(int x, int y)` | Called when the window is resized. Must be called **after** `CreateWindow`. Receives the new pixel width and height. |
 
 ```c
 void key_handler(int key) {
@@ -26,14 +26,14 @@ void click_handler(int x, int y, int btn) {
     }
 }
 
-int delete_handler(void) {
+int delete_handler() {
     // Return 0 to show a "are you sure?" dialog, 1 to confirm exit
     return 1;
 }
 
-void resize_handler(int w, int h) {
-    // Re-layout elements for the new window size
-    ElemModifyBounds(ID_PANEL, 0, 0, w, h);
+void resize_handler(int x, int y) {
+    // Re-layout elements for the new window size (x=width, y=height)
+    ElemModifyBounds(ID_PANEL, 0, 0, x, y);
 }
 
 EventAttachKey(key_handler);

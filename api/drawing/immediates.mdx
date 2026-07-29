@@ -1,7 +1,7 @@
 ---
-title: "Immediate-Mode Drawing Functions"
+title: "LWXGL Immediate-Mode Drawing: Text, Shapes, and Lines"
 sidebarTitle: "Immediates"
-description: "Draw text, rectangles, ellipses, and lines directly to the back-buffer each frame without managing element IDs — cleared automatically before the next frame."
+description: "Draw text, rectangles, ellipses, and lines directly to the LWXGL back-buffer each frame — cleared automatically before the next frame."
 ---
 
 Immediate-mode functions draw directly to the LWXGL back-buffer pixmap rather than into a retained element. Because the back-buffer is cleared and recomposited at the start of every frame, anything drawn with an immediate function disappears before the next `on_every` invocation — there are no IDs to manage and no explicit cleanup required. Call them inside your `on_every` callback to produce overlays, HUDs, debug visualizations, or any other per-frame decoration that should not persist between frames. All immediate functions use palette-indexed colors consistent with the global 16-entry LWXGL palette.
@@ -195,7 +195,7 @@ void on_every(int tick, float dt) {
     ImmediateTextF(16, 27, CLR_LGREEN, "HEALTH %d%%", health);
 
     // Health bar background
-    ImmediateRect(100, 29, 100, 8, CLR_NONE, CLR_DGRAY);
+    ImmediateRect(100, 29, 100, 8, CLR_NONE, CLR_GRAY);
 
     // Health bar fill — width proportional to health
     int bar_w = health;

@@ -1,5 +1,5 @@
 ---
-title: "Window Lifecycle and the Render Loop"
+title: "LWXGL Window Lifecycle: Creating, Looping, and Cleanup"
 sidebarTitle: "Window"
 description: "Learn how LWXGL creates and manages an X11 window, the double-buffered back-buffer pixmap, and how MainWindowLoop drives rendering and events each frame."
 ---
@@ -51,7 +51,7 @@ When scroll mode is active (see `ReserveScroll`), the back-buffer height is set 
 `MainWindowLoop` is LWXGL's frame driver. It blocks until the window is closed, executing the following work on every frame tick:
 
 1. **Drain the X11 event queue** — all pending `XEvent`s are dispatched to built-in and user-registered handlers.
-2. **Call `on_every(tick, delta_time)`** — your per-frame callback, where `tick` is an incrementing `unsigned long long` frame counter (starting at 0) and `delta_time` is a `float` representing elapsed seconds since the previous frame.
+2. **Call `on_every(tick, delta_time)`** — your per-frame callback, where `tick` is a frame counter (starting at 0) and `delta_time` is a `float` representing elapsed seconds since the previous frame.
 3. **Render all visible elements** to the back-buffer, then blit the back-buffer to the window.
 4. **Run queued tasks** — any tasks scheduled with `NewQueuedTask` whose target time has been reached are executed.
 5. **Sleep** the remainder of the frame budget so that the loop runs at approximately `target_fps` frames per second.
@@ -70,10 +70,10 @@ MainWindowLoop(60, on_every);
 ```
 
 <Note>
-The `on_every` callback signature uses `int tick` in the public C header, but internally the tick counter is `unsigned long long`. For practical purposes the `int` type is sufficient unless you need extremely long-running sessions.
+By default, `on_every` is called **before** elements are rendered (`ORDER_ELEM_SECOND`), meaning anything you draw with immediate-mode functions inside `on_every` appears beneath retained elements. Call `SetRenderingOrder(ORDER_ELEM_FIRST)` to flip the order so elements render first and `on_every` draws on top.
 </Note>
 
-The rendering order of elements relative to the `on_every` callback can be changed with `SetRenderingOrder`. By default, elements are rendered first (`ORDER_ELEM_FIRST`).
+The rendering order of elements relative to the `on_every` callback can be changed with `SetRenderingOrder`. By default, `on_every` runs first and elements are rendered on top (`ORDER_ELEM_SECOND`).
 
 ## Closing and Cleanup
 
@@ -108,8 +108,8 @@ TerminateWindow(); // Always call this after the loop exits
 By default, `CreateWindow` locks the window to the requested dimensions by setting both the minimum and maximum WM size hints to `(w, h)`. To allow the user to resize the window, call `EnableResizing` **after** `CreateWindow`:
 
 ```c
-void on_resize(int new_w, int new_h) {
-    // Reposition or resize elements to fit the new dimensions
+void on_resize(int x, int y) {
+    // x and y are the new window width and height
 }
 
 CreateWindow(800, 600, "Resizable App", CLR_BLACK);

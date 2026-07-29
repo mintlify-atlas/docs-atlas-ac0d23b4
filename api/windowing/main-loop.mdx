@@ -34,12 +34,12 @@ Enters the main run loop. Each iteration checks whether a full frame period has 
 Each rendered frame executes the following steps in order:
 
 1. **Handle X11 events** — all queued `XEvent` messages (pointer motion, button press/release, key press/release, resize, delete-window, etc.) are drained and dispatched.
-2. **`on_every` or elements** — depending on the rendering order set by `SetRenderingOrder`:
-   - `ORDER_ELEM_SECOND` (default, `0`): `on_every` is called **before** elements are rendered.
-   - `ORDER_ELEM_FIRST` (`1`): elements are rendered **before** `on_every` is called.
-3. **Render all visible elements** — each non-NULL, visible element is drawn to the back-buffer pixmap, then the pixmap is copied to the window.
-4. **Process queued tasks** — tasks registered with `NewQueuedTask` whose `target_time` has been reached are executed. Tasks with `TASK_RUN_EVERY` are re-queued automatically.
-5. **Sleep** — if the remaining frame time is greater than 2 ms, the loop sleeps for `(remaining − 1 ms)` then yields; otherwise it yields immediately with `std::this_thread::yield()`.
+2. **Render frame** — the back-buffer is cleared, then `on_every` and element rendering are interleaved according to the rendering order set by `SetRenderingOrder`:
+   - `ORDER_ELEM_SECOND` (default, `0`): `on_every` is called **before** elements are rendered to the back-buffer.
+   - `ORDER_ELEM_FIRST` (`1`): elements are rendered to the back-buffer **before** `on_every` is called.
+   The completed back-buffer is then copied to the window with `XCopyArea`.
+3. **Process queued tasks** — tasks registered with `NewQueuedTask` whose `target_time` has been reached are executed. Tasks with `TASK_RUN_EVERY` are re-queued automatically.
+4. **Sleep** — if the remaining frame time is greater than 2 ms, the loop sleeps for `(remaining − 1 ms)`; otherwise it yields immediately with `std::this_thread::yield()`.
 
 ### Exit condition
 
