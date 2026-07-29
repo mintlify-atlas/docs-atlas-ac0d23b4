@@ -1,0 +1,149 @@
+---
+title: "Event Callback Registration"
+sidebarTitle: "Event Callbacks"
+description: "Register callback functions for keyboard input, mouse clicks, window close confirmation, window resize, and scroll events in LWXGL."
+---
+
+LWXGL processes X11 events internally on every frame and dispatches them to a set of user-provided callback functions registered through the `EventAttach*` and `EnableResizing` APIs. Each registration function accepts a function pointer and stores it globally — only one callback per event type is active at a time, and passing `NULL` disables that callback. Callbacks are invoked after LWXGL's own element event handling is complete, so element-level interactions (button clicks, input field key strokes, etc.) consume events before the user callbacks see them.
+
+## `EventAttachKey`
+
+Registers a callback invoked on each key-press event that reaches the application layer.
+
+```c
+void EventAttachKey(void (*Key)(int key));
+```
+
+The callback receives the translated character code of the pressed key. Printable ASCII characters are passed as-is. The Enter/Return key is normalized to `10` (ASCII line-feed). Arrow keys and F-keys are mapped to the special constants listed in the table below. The callback is **not** called when a modal dialog is open, or when an `Input` or `Console` element is focused (hovered), as those elements consume key events themselves.
+
+<ParamField path="Key" type="void (*)(int key)" required>
+  Function pointer to invoke on each key press. Receives a single `int` containing the ASCII code or a `KEY_*` constant. Pass `NULL` to unregister.
+</ParamField>
+
+### Special key constants
+
+| Constant | Value | Key |
+|----------|-------|-----|
+| `KEY_LEFT` | `170` | Left arrow |
+| `KEY_RIGHT` | `171` | Right arrow |
+| `KEY_UP` | `172` | Up arrow |
+| `KEY_DOWN` | `173` | Down arrow |
+| `KEY_FN` | `150` | F-key base — add 1–12 for F1–F12 (`KEY_FN + 1` = F1, `KEY_FN + 12` = F12) |
+
+<Note>
+The key callback fires on the initial press event. LWXGL enables detectable auto-repeat via `XkbSetDetectableAutoRepeat`, so holding a key will generate repeated press events without spurious synthetic release events between them. For continuous per-frame polling use `QueryKeyDown` instead.
+</Note>
+
+---
+
+## `EventAttachClick`
+
+Registers a callback invoked on mouse button **release** events not consumed by a UI element or modal.
+
+```c
+void EventAttachClick(void (*Click)(int x, int y, int btn));
+```
+
+The callback is called at the end of the button-release dispatch chain, after LWXGL has checked whether the cursor is inside a `Button`, `Checkbox`, `Console`, or other interactive element. Scroll-wheel events (buttons 4 and 5) are also delivered here when no scrollable element is hovered and scroll mode is not active.
+
+<ParamField path="Click" type="void (*)(int x, int y, int btn)" required>
+  Function pointer to invoke on button release. `x` and `y` are the cursor position relative to the window. `btn` is the button index (see table). Pass `NULL` to unregister.
+</ParamField>
+
+### Button values
+
+| `btn` | Description |
+|-------|-------------|
+| `1` | Left mouse button |
+| `2` | Middle mouse button (wheel click) |
+| `3` | Right mouse button |
+| `4` | Scroll wheel up |
+| `5` | Scroll wheel down |
+
+---
+
+## `EventAttachDelete`
+
+Registers a callback invoked when the window manager's close button (`WM_DELETE_WINDOW`) is activated.
+
+```c
+void EventAttachDelete(int (*on_exit)());
+```
+
+The callback's return value controls whether LWXGL proceeds with window teardown. Return `1` to allow the window to close (equivalent to calling `DeleteWindow()`). Return `0` to veto the close request — useful for showing a "Save before exit?" confirmation modal.
+
+<ParamField path="on_exit" type="int (*)()" required>
+  Function pointer returning an `int`. Return `1` to confirm close, `0` to cancel. Pass `NULL` to restore the default behavior (immediate close on any WM delete event).
+</ParamField>
+
+<Warning>
+If no delete callback is registered, LWXGL will close the window immediately when the WM close button is pressed. Register a callback with `EventAttachDelete` if you need to prompt the user or save state before exiting.
+</Warning>
+
+---
+
+## `EnableResizing`
+
+Removes fixed-size window manager hints and registers a callback invoked when the window is resized.
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+By default LWXGL creates windows with `PMinSize | PMaxSize` hints that lock the window to its initial dimensions. Calling `EnableResizing` clears those hints (or adjusts them to allow resizing within scroll-mode constraints) and stores the callback. The callback is called from the `ConfigureNotify` handler after LWXGL has updated its internal `win_w`/`win_h` and reconstructed the back-buffer to match the new dimensions.
+
+<ParamField path="Resize" type="void (*)(int w, int h)" required>
+  Function pointer called with the new window width and height in pixels whenever a `ConfigureNotify` event changes the window size.
+</ParamField>
+
+<Note>
+When scroll mode is active (`ReserveScroll` was called), resizing is horizontally unlimited but the maximum height is clamped to the virtual canvas height so that the scrollable area is never obscured.
+</Note>
+
+---
+
+## Code example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+void on_key(int key) {
+    if (key == KEY_UP)    printf("Up arrow\n");
+    if (key == KEY_DOWN)  printf("Down arrow\n");
+    if (key == KEY_LEFT)  printf("Left arrow\n");
+    if (key == KEY_RIGHT) printf("Right arrow\n");
+    if (key == KEY_FN + 1) printf("F1 pressed\n");
+    if (key >= 32 && key < 127) printf("Character: %c\n", key);
+}
+
+void on_click(int x, int y, int btn) {
+    printf("Button %d released at (%d, %d)\n", btn, x, y);
+}
+
+int on_exit(void) {
+    // Show a confirmation modal; cancel the default close for now.
+    SpawnModal(MODAL_CONFIRM, "Exit the application?", [](const char* _) {
+        // User clicked OK in the modal — close for real
+        DeleteWindow();
+    });
+    return 0;  // veto the immediate close
+}
+
+void on_resize(int w, int h) {
+    printf("Window resized to %d × %d\n", w, h);
+}
+
+int main(void) {
+    CreateWindow(640, 480, "Event Demo", CLR_BLACK);
+
+    EventAttachKey(on_key);
+    EventAttachClick(on_click);
+    EventAttachDelete(on_exit);
+    EnableResizing(on_resize);
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```

@@ -1,0 +1,154 @@
+---
+title: "Palette API: Query, Modify, and Reset Colors"
+sidebarTitle: "Palette"
+description: "Query the current RGB value of any palette entry, modify entries at runtime with optional automatic redraw, and reset to the 16 default colors."
+---
+
+LWXGL uses a fixed 16-entry palette stored in the X11 colormap. Every pixel in every `ImageElement` is stored as a 4-bit palette index (0–15), and every drawing primitive — including text, buttons, rectangles, and image data — references these indices. The palette API lets you query the live RGB value of any entry, replace individual entries at runtime, and restore the factory defaults. Because the palette is global, a single `PaletteModify` call instantly changes the appearance of every element that uses that color index.
+
+## `PaletteQuery`
+
+Queries the current RGB values of a palette entry from the X11 colormap.
+
+```c
+void PaletteQuery(int idx, unsigned char* r, unsigned char* g, unsigned char* b);
+```
+
+Calls `XQueryColor` on the `Colormap` for the pixel value stored at `colors[idx]` and converts the 16-bit X11 channel values to 8-bit by dividing by 257. The result reflects the true color allocated in the colormap at query time, including any runtime modifications made with `PaletteModify`.
+
+<ParamField path="idx" type="int" required>
+  Palette index to query (0–15).
+</ParamField>
+
+<ParamField path="r" type="unsigned char*" required>
+  Pointer to receive the red channel value (0–255).
+</ParamField>
+
+<ParamField path="g" type="unsigned char*" required>
+  Pointer to receive the green channel value (0–255).
+</ParamField>
+
+<ParamField path="b" type="unsigned char*" required>
+  Pointer to receive the blue channel value (0–255).
+</ParamField>
+
+---
+
+## `PaletteModify`
+
+Replaces one palette entry with a new RGB color.
+
+```c
+void PaletteModify(int idx, unsigned char r, unsigned char g, unsigned char b, int redraw);
+```
+
+Frees the old X11 colormap allocation for `colors[idx]` with `XFreeColors`, then allocates a new color with `XAllocColor` using the supplied RGB values (scaled to 16-bit internally by multiplying by 257). The resulting pixel value is stored back into `colors[idx]`. If `redraw` is non-zero, `RedrawAllImages()` is called immediately after to force all `ImageElement` canvases to re-upload their pixel data with the new color mapping.
+
+<Warning>
+Palette modifications are global. All elements and image pixel data using the modified index will immediately display the new color, including retained `Rect`, `Text`, `Button`, and `Image` elements. Pass `redraw = 1` whenever you want the change to take effect visually on the next frame.
+</Warning>
+
+<ParamField path="idx" type="int" required>
+  Palette index to replace (0–15).
+</ParamField>
+
+<ParamField path="r" type="unsigned char" required>
+  New red channel value (0–255).
+</ParamField>
+
+<ParamField path="g" type="unsigned char" required>
+  New green channel value (0–255).
+</ParamField>
+
+<ParamField path="b" type="unsigned char" required>
+  New blue channel value (0–255).
+</ParamField>
+
+<ParamField path="redraw" type="int" required>
+  Pass `1` to call `RedrawAllImages()` after modifying the color, forcing all image elements to re-render with the new palette. Pass `0` to defer the redraw (useful when modifying multiple entries in a loop — call `RedrawAllImages()` manually afterwards).
+</ParamField>
+
+---
+
+## `PaletteReset`
+
+Restores all 16 palette entries to the LWXGL factory defaults and redraws all image elements.
+
+```c
+void PaletteReset();
+```
+
+Frees all 16 current colormap allocations in one `XFreeColors` call, then re-allocates each entry from the compile-time `color_palette` table. `RedrawAllImages()` is called unconditionally at the end.
+
+---
+
+## Default palette
+
+The table below lists the 16 factory-default palette entries as defined in `main.cc`.
+
+| Index | Constant | Name | R | G | B |
+|-------|----------|------|---|---|---|
+| `0x0` | `CLR_BLACK` | Black | 0 | 0 | 0 |
+| `0x1` | `CLR_BLUE` | Dark Blue | 3 | 3 | 173 |
+| `0x2` | `CLR_GREEN` | Dark Green | 0 | 170 | 0 |
+| `0x3` | `CLR_CYAN` | Dark Cyan | 0 | 168 | 168 |
+| `0x4` | `CLR_RED` | Dark Red | 186 | 6 | 6 |
+| `0x5` | `CLR_MAGENTA` | Dark Magenta | 168 | 0 | 168 |
+| `0x6` | `CLR_ORANGE` | Orange | 230 | 126 | 34 |
+| `0x7` | `CLR_LGRAY` | Light Gray | 168 | 168 | 168 |
+| `0x8` | `CLR_GRAY` | Dark Gray | 85 | 87 | 83 |
+| `0x9` | `CLR_LBLUE` | Light Blue | 87 | 87 | 255 |
+| `0xA` | `CLR_LGREEN` | Light Green | 85 | 255 | 85 |
+| `0xB` | `CLR_LCYAN` | Light Cyan | 96 | 240 | 240 |
+| `0xC` | `CLR_LRED` | Light Red | 255 | 85 | 85 |
+| `0xD` | `CLR_LMAGENTA` | Light Magenta | 240 | 84 | 240 |
+| `0xE` | `CLR_YELLOW` | Yellow | 244 | 242 | 54 |
+| `0xF` | `CLR_WHITE` | White | 255 | 255 | 255 |
+
+---
+
+## Code example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+void print_palette(void) {
+    for (int i = 0; i < 16; i++) {
+        unsigned char r, g, b;
+        PaletteQuery(i, &r, &g, &b);
+        printf("  [%2d] rgb(%3d, %3d, %3d)\n", i, r, g, b);
+    }
+}
+
+int main(void) {
+    CreateWindow(320, 240, "Palette Demo", CLR_BLACK);
+
+    printf("Default palette:\n");
+    print_palette();
+
+    // Replace CLR_BLUE (index 1) with a custom indigo, redraw immediately
+    PaletteModify(CLR_BLUE, 75, 0, 130, 1);
+
+    // Batch-modify several entries, then redraw once at the end
+    PaletteModify(CLR_RED,   220, 20,  60, 0);  // Crimson
+    PaletteModify(CLR_GREEN,  34, 139, 34, 0);  // Forest green
+    PaletteModify(CLR_YELLOW, 255, 215, 0, 0);  // Gold
+    RedrawAllImages();
+
+    printf("\nModified palette:\n");
+    print_palette();
+
+    MainWindowLoop(30, NULL);
+
+    // Restore factory defaults before exit
+    PaletteReset();
+
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+When modifying multiple palette entries in sequence, pass `redraw = 0` for all but the last call (or for all of them and call `RedrawAllImages()` once manually) to avoid triggering a full image redraw for each individual color change.
+</Tip>

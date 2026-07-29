@@ -1,0 +1,122 @@
+---
+title: "Scheduling Queued Tasks in LWXGL"
+sidebarTitle: "Queued Tasks"
+description: "Schedule one-shot or repeating callbacks with NewQueuedTask to run deferred work inside the LWXGL render loop without blocking the frame."
+---
+
+LWXGL includes a lightweight task queue that is processed on every iteration of `MainWindowLoop`. Tasks run on the main thread after event handling and rendering, which makes it safe to call any LWXGL function — update a label, spawn a modal, modify an image canvas — without locks or cross-thread coordination. This is the recommended way to run deferred or periodic work inside an LWXGL application.
+
+## Scheduling a Task
+
+```c
+void NewQueuedTask(int type, double delay_seconds, void (*task)(void));
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `type` | `TASK_RUN_AFTER` (one-shot) or `TASK_RUN_EVERY` (repeating). See the table below. |
+| `delay_seconds` | A `double` representing the delay in seconds, measured against `GetElapsedTime()`. |
+| `task` | A `void callback(void)` with no parameters, called when the task fires. |
+
+## Task Types
+
+| Constant | Value | Behavior |
+|----------|-------|----------|
+| `TASK_RUN_AFTER` | `0` | Fires **once** after `delay_seconds` of elapsed time has passed. The task is then removed from the queue. |
+| `TASK_RUN_EVERY` | `1` | Fires **repeatedly** on each interval boundary separated by `delay_seconds`. The task remains in the queue indefinitely. |
+
+## Elapsed Time
+
+```c
+double GetElapsedTime(void);
+```
+
+Returns the total number of seconds elapsed since `MainWindowLoop` started, as a `double`. The value increments each frame based on the real wall-clock time between frames. Tasks are checked against this value once per frame, immediately after `on_every` returns.
+
+A `TASK_RUN_AFTER` task scheduled at elapsed time `T` with `delay_seconds = D` will fire on the first frame where `elapsed_time >= T + D`.
+
+```c
+printf("Running for %.2f seconds\n", GetElapsedTime());
+```
+
+## Cancellation
+
+There is no explicit API to cancel a queued task. To prevent a repeating task from doing work, design its callback to check a shared flag and return early. The task remains in the queue and continues to fire, but its body is a no-op:
+
+```c
+static int ticker_enabled = 1;
+
+void ticker_callback(void) {
+    if (!ticker_enabled) return;
+    /* ... do work ... */
+}
+
+/* To effectively cancel: */
+ticker_enabled = 0;
+```
+
+<Tip>
+For one-shot tasks (`TASK_RUN_AFTER`), the same flag pattern works equally well — the callback is called once and then discarded regardless of what it does.
+</Tip>
+
+## Interval Alignment for TASK_RUN_EVERY
+
+When a `TASK_RUN_EVERY` task is registered, LWXGL computes its first fire time as:
+
+```
+first_fire = ceil(elapsed_time / interval) * interval
+```
+
+This aligns the first fire to the next clean multiple of `interval` from program start, not from the moment of registration. As a result, a task registered with `delay_seconds = 0.5` at elapsed time `1.3` will first fire at `1.5`, then at `2.0`, `2.5`, and so on — regardless of when it was added.
+
+<Note>
+Tasks scheduled with `TASK_RUN_EVERY` use ceil-aligned start times relative to elapsed time, so they fire at even intervals from program start rather than from the moment they were registered.
+</Note>
+
+## Complete Example
+
+The following example schedules a one-shot task that updates a text element after 2 seconds, and a repeating task that fires every 0.5 seconds to blink a status indicator.
+
+```c
+#include "libLWXGL.h"
+#include <string.h>
+
+#define LABEL_ID   0
+#define STATUS_ID  1
+
+static int blink_state = 0;
+
+void deferred_label_update(void) {
+    /* Safe to call any LWXGL function here */
+    CreateCopiedText(LABEL_ID, 20, 20, "Ready!", CLR_GREEN);
+}
+
+void blink_tick(void) {
+    blink_state = !blink_state;
+    ElemSetVisible(STATUS_ID, blink_state);
+}
+
+void on_frame(int tick, float dt) {
+    (void)tick; (void)dt;
+}
+
+int main(void) {
+    CreateWindow(400, 200, "Task Queue Demo", CLR_BLACK);
+
+    /* Initial label text */
+    CreateText(LABEL_ID, 20, 20, "Loading...", CLR_LGRAY);
+
+    /* Status dot */
+    CreateRect(STATUS_ID, 370, 10, 12, 12, CLR_NONE, CLR_YELLOW);
+
+    /* One-shot: replace label text after 2 seconds */
+    NewQueuedTask(TASK_RUN_AFTER, 2.0, deferred_label_update);
+
+    /* Repeating: blink the status indicator every 0.5 seconds */
+    NewQueuedTask(TASK_RUN_EVERY, 0.5, blink_tick);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

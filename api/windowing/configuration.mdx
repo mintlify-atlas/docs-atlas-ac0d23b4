@@ -1,0 +1,190 @@
+---
+title: "Window Configuration: Title, Color, Cursor, Font, Resizing, Scroll"
+sidebarTitle: "Configuration"
+description: "Configure an LWXGL window's title, background color, cursor shape, global font weight, resizing behavior, and scrollable canvas height."
+---
+
+After `CreateWindow` has succeeded, a set of configuration functions lets you change the window's visible properties and opt into optional subsystems such as resizing and scroll mode. Most of these can be called at any point during the session; `ReserveScroll` is the sole exception and must be called **before** `CreateWindow`.
+
+---
+
+## `SetWindowTitle`
+
+```c
+void SetWindowTitle(const char* title);
+```
+
+Updates the window's title bar by calling `XStoreName`. The change is visible immediately.
+
+<ParamField path="title" type="const char*" required>
+  Null-terminated string to display in the window title bar. The pointer only needs to be valid for the duration of the call.
+</ParamField>
+
+---
+
+## `SetWindowColor`
+
+```c
+void SetWindowColor(int color);
+```
+
+Sets the palette index used to fill the back-buffer at the start of every frame. Changing this value takes effect on the very next rendered frame.
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) or a `CLR_*` constant. Use `CLR_BLACK` (`0`) for a black background.
+</ParamField>
+
+---
+
+## `ChangeCursor`
+
+```c
+void ChangeCursor(int cursor_font_glyph);
+```
+
+Replaces the window cursor. The cursor is always freed immediately after being defined on the window, so there is no cursor handle to manage.
+
+<ParamField path="cursor_font_glyph" type="int" required>
+  X11 cursor font glyph index (see `<X11/cursorfont.h>`). Pass **255** to hide the cursor entirely — this creates a 1×1 blank pixmap cursor with no visible hotspot. `CreateWindow` sets the initial cursor to glyph **68** (crosshair).
+</ParamField>
+
+<Tip>
+Common useful glyphs: `0` = X arrow, `60` = hand/pointing finger, `68` = crosshair, `130` = watch/busy, `152` = I-beam.
+</Tip>
+
+---
+
+## `SetGlobalBold`
+
+```c
+int SetGlobalBold(int bold);
+```
+
+Switches the global X11 text font used by `CreateText`, `CreateButton`, and other text-rendering elements. The new font is loaded with `XLoadQueryFont`; if loading fails the existing font is left unchanged.
+
+<ParamField path="bold" type="int" required>
+  Pass `1` to switch to the `9x15bold` font, or `0` to switch back to the regular `9x15` font.
+</ParamField>
+
+**Returns** `1` on success, `0` if the requested font could not be loaded.
+
+<Note>
+This affects only the global X11 GC font used for `CreateText` / `CreateButton` labels. Image-based text drawn with `DrawString` uses the bitmap font installed per-image via `SetImageFont` and is not affected.
+</Note>
+
+---
+
+## `EnableResizing`
+
+```c
+void EnableResizing(void (*Resize)(int w, int h));
+```
+
+Removes the fixed-size window manager hints set by `CreateWindow`, allowing the user to resize the window freely. When a resize event arrives, the back-buffer pixmap is recreated at the new dimensions and the `Resize` callback is fired.
+
+<ParamField path="Resize" type="void (*)(int w, int h)" required>
+  Callback invoked with the new window dimensions whenever the window is resized. Use this to reposition or rescale elements. In scroll mode, only the width can change — the height remains fixed at the virtual canvas height.
+</ParamField>
+
+<Warning>
+`EnableResizing` must be called after `CreateWindow`. Calling it before `CreateWindow` has no effect because the window does not yet exist.
+</Warning>
+
+---
+
+## `ReserveScroll`
+
+```c
+void ReserveScroll(int height, int scrollbar_color, void (*Scroll)(int offset));
+```
+
+Enables scroll mode, which creates a virtual canvas taller than the visible window. A scrollbar is drawn along the right edge of the window. Mouse-wheel events and scrollbar dragging update the scroll offset and call the `Scroll` callback.
+
+<ParamField path="height" type="int" required>
+  Total virtual canvas height in pixels. The back-buffer pixmap will be this tall, while the window itself remains `h` pixels tall (as passed to `CreateWindow`).
+</ParamField>
+
+<ParamField path="scrollbar_color" type="int" required>
+  Palette index for the scrollbar thumb. Pass `CLR_NONE` (`-1`) to suppress rendering of the scrollbar entirely while still enabling scroll functionality.
+</ParamField>
+
+<ParamField path="Scroll" type="void (*)(int offset)" required>
+  Callback invoked with the new pixel scroll offset whenever the user scrolls. Use `QueryScroll()` at any time to read the current offset.
+</ParamField>
+
+<Warning>
+`ReserveScroll` must be called **before** `CreateWindow`. If called after the window already exists, it silently returns without effect.
+</Warning>
+
+---
+
+## `GetXConnection`
+
+```c
+void GetXConnection(XConnectionData* data);
+```
+
+Fills an `XConnectionData` struct with the raw Xlib handles managed internally by LWXGL. Use this for advanced integration — for example, loading OpenGL extensions, creating additional GCs, or querying server capabilities directly.
+
+<ParamField path="data" type="XConnectionData*" required>
+  Pointer to a caller-allocated `XConnectionData` struct that will be populated. The struct is defined in `libLWXGL.h` (only available when `XlibSpecificationRelease` is defined, i.e. when `<X11/Xlib.h>` has been included first):
+
+  ```c
+  typedef struct {
+      Pixmap       bb;        /* Back-buffer pixmap */
+      XFontStruct* font;      /* Current global font */
+      Display*     dpy;       /* Display connection */
+      Window       win;       /* Application window */
+      GC           gc;        /* Graphics context */
+      unsigned long clrs[16]; /* Allocated pixel values for palette indices 0–15 */
+      int          scrn;      /* Default screen number */
+      Visual*      vis;       /* Default visual */
+      int          depth;     /* Display depth (bits per pixel) */
+      Colormap     cmap;      /* Default colormap */
+  } XConnectionData;
+  ```
+</ParamField>
+
+<Warning>
+The handles returned are owned by LWXGL. Do not free or destroy them. Any changes made directly via these handles may conflict with LWXGL's internal state.
+</Warning>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+
+static void on_resize(int w, int h) {
+    /* Re-center a label element when the window is resized */
+    ElemModifyBounds(0, w / 2 - 50, 20, 100, 20);
+}
+
+static void on_scroll(int offset) {
+    /* Keep a header label pinned at the top regardless of scroll */
+    (void)offset;
+}
+
+int main(void) {
+    /* Must be called before CreateWindow */
+    ReserveScroll(2000, CLR_GRAY, on_scroll);
+
+    if (CreateWindow(800, 600, "Scrollable App", CLR_BLACK) != 0) return 1;
+
+    /* Switch to bold font for headings */
+    SetGlobalBold(1);
+    CreateText(0, 350, 20, "Welcome", CLR_WHITE);
+    SetGlobalBold(0);
+
+    /* Allow user resizing */
+    EnableResizing(on_resize);
+
+    /* Hide cursor on a kiosk display */
+    /* ChangeCursor(255); */
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```

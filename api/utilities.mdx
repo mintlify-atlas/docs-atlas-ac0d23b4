@@ -1,0 +1,199 @@
+---
+title: "Utility Functions: Time, Tasks, Modals, and Scroll"
+sidebarTitle: "Utilities"
+description: "Schedule deferred and repeating tasks, spawn modal dialogs, query elapsed time, and control the virtual scroll canvas with LWXGL utility functions."
+---
+
+LWXGL provides a small set of utility functions that complement the core windowing and drawing APIs. `GetElapsedTime` gives a reliable monotonic clock tied to the main loop for animations and timing logic. `NewQueuedTask` lets you schedule one-shot or repeating callbacks without managing external timers. `SpawnModal` presents a blocking overlay dialog for alerts, confirmations, and text input. `QueryModalOpen` and `QueryScroll` allow you to adapt per-frame logic to modal and scroll state without relying on callbacks.
+
+## `GetElapsedTime`
+
+Returns the total number of seconds elapsed since `MainWindowLoop` started.
+
+```c
+double GetElapsedTime();
+```
+
+The elapsed time is accumulated as a sum of per-frame deltas computed from `std::chrono::steady_clock` timestamps. It starts at `0.0` at the first frame and grows monotonically. It is safe to call from within `on_every`, from task callbacks, or from event callbacks. Because the value accumulates whole-frame deltas, it advances in discrete frame-sized steps rather than continuously — two calls within the same frame return the same value.
+
+**Returns:** `double` — seconds since `MainWindowLoop` was first called.
+
+---
+
+## `NewQueuedTask`
+
+Schedules a deferred or repeating void callback.
+
+```c
+void NewQueuedTask(int type, double run_after, void (*task)());
+```
+
+Tasks are evaluated at the end of each frame, after `on_every` returns. When `GetElapsedTime()` reaches or exceeds the task's `target_time`, the `task` function is called with no arguments. One-shot tasks (`TASK_RUN_AFTER`) are discarded after execution. Repeating tasks (`TASK_RUN_EVERY`) are re-queued with `target_time += run_after` so that subsequent firings drift-correct rather than accumulate latency.
+
+For `TASK_RUN_EVERY`, the first `target_time` is computed as `ceil(elapsed_time / run_after) * run_after`, which aligns the first firing to the next clean multiple of `run_after` rather than `elapsed_time + run_after`. This prevents gradually drifting repeating tasks.
+
+<ParamField path="type" type="int" required>
+  Task scheduling mode. See the constants table below.
+</ParamField>
+
+<ParamField path="run_after" type="double" required>
+  For `TASK_RUN_AFTER`: seconds to wait before the single execution. For `TASK_RUN_EVERY`: interval in seconds between repeated executions.
+</ParamField>
+
+<ParamField path="task" type="void (*)()" required>
+  Pointer to a `void callback()` function with no parameters to invoke when the task fires.
+</ParamField>
+
+### Task type constants
+
+| Constant | Value | Behavior |
+|----------|-------|----------|
+| `TASK_RUN_AFTER` | `0` | Run `task` once, `run_after` seconds from now, then discard. |
+| `TASK_RUN_EVERY` | `1` | Run `task` repeatedly every `run_after` seconds, ceil-aligned start. |
+
+<Note>
+Tasks are evaluated sequentially in the order they fire within a single frame. If multiple tasks become ready in the same frame they are all executed before the next frame begins.
+</Note>
+
+---
+
+## `SpawnModal`
+
+Displays a blocking modal overlay dialog.
+
+```c
+void SpawnModal(int type, const char* msg, void (*on_confirm)(const char* input));
+```
+
+LWXGL renders the modal on top of all other elements each frame while it is active. Element click events, the `EventAttachKey` callback, and the `EventAttachClick` callback are all suppressed while the modal is open. The modal is dismissed when the user clicks the OK button (and, for non-alert types, an optional Cancel button). When dismissed via OK, `on_confirm` is called with `NULL` for `MODAL_ALERT` and `MODAL_CONFIRM`, or with a pointer to the user's typed input string for `MODAL_INPUT`.
+
+The `msg` string is duplicated internally (`strdup`) — the caller does not need to keep it alive after the call returns.
+
+<ParamField path="type" type="int" required>
+  Modal variant. See the constants table below.
+</ParamField>
+
+<ParamField path="msg" type="const char*" required>
+  Message text displayed in the modal body. Internally duplicated; may be a temporary buffer.
+</ParamField>
+
+<ParamField path="on_confirm" type="void (*)(const char* input)" required>
+  Callback invoked when the user clicks OK. For `MODAL_ALERT` and `MODAL_CONFIRM`, `input` is `NULL`. For `MODAL_INPUT`, `input` points to the entered text (up to 150 characters). The pointer is only valid for the duration of the callback — copy the string if you need it later. Pass `NULL` if no action is needed on confirmation.
+</ParamField>
+
+### Modal type constants
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `MODAL_ALERT` | `0` | Single OK button. Used for informational notices. Cancel is disabled. |
+| `MODAL_CONFIRM` | `1` | Cancel + OK buttons. No text input. `on_confirm` is called only on OK. |
+| `MODAL_INPUT` | `2` | Text input field + Cancel + OK. `on_confirm` receives the typed string. |
+
+<Warning>
+Only one modal can be active at a time. Calling `SpawnModal` while a modal is already open will replace it immediately, discarding the previous message and `on_confirm` callback.
+</Warning>
+
+---
+
+## `QueryModalOpen`
+
+Returns whether a modal dialog is currently displayed.
+
+```c
+int QueryModalOpen();
+```
+
+**Returns:** `1` if a modal spawned with `SpawnModal` is active, `0` otherwise. Useful inside `on_every` to pause animations or game logic while the user interacts with a dialog.
+
+---
+
+## `QueryScroll`
+
+Returns the current vertical scroll offset of the virtual back-buffer canvas.
+
+```c
+int QueryScroll();
+```
+
+Scroll mode must be enabled before `CreateWindow` is called via `ReserveScroll`. The scroll offset starts at `0` (top) and increases as the user scrolls down, capped at `virtual_height − window_height`. Always returns `0` when scroll mode is inactive.
+
+**Returns:** Current scroll offset in pixels.
+
+---
+
+## Code examples
+
+### Task scheduling
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+static int blink_state = 0;
+
+void on_blink(void) {
+    blink_state = !blink_state;
+}
+
+void show_warning(void) {
+    SpawnModal(MODAL_ALERT, "5 seconds have elapsed!", NULL);
+}
+
+int main(void) {
+    CreateWindow(400, 200, "Task Demo", CLR_BLACK);
+
+    // Toggle a blink flag every 0.5 seconds
+    NewQueuedTask(TASK_RUN_EVERY, 0.5, on_blink);
+
+    // Fire a one-shot alert after 5 seconds
+    NewQueuedTask(TASK_RUN_AFTER, 5.0, show_warning);
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```
+
+### Modal dialogs
+
+```c
+#include "libLWXGL.h"
+#include <string.h>
+
+static char saved_name[64] = {0};
+
+void on_name_entered(const char* input) {
+    if (input != NULL) {
+        strncpy(saved_name, input, sizeof(saved_name) - 1);
+    }
+}
+
+void ask_for_name(void) {
+    SpawnModal(MODAL_INPUT, "Enter your name:", on_name_entered);
+}
+
+void on_confirm_exit(const char* _) {
+    DeleteWindow();  // User confirmed — close for real
+}
+
+int on_exit(void) {
+    SpawnModal(MODAL_CONFIRM, "Exit the application?", on_confirm_exit);
+    return 0;  // Veto the immediate close; wait for modal
+}
+
+int main(void) {
+    CreateWindow(400, 200, "Modal Demo", CLR_BLACK);
+    EventAttachDelete(on_exit);
+
+    // Ask for a name 1 second after startup
+    NewQueuedTask(TASK_RUN_AFTER, 1.0, ask_for_name);
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Use `TASK_RUN_EVERY` with a short interval as a lightweight alternative to putting logic directly in `on_every` — for example, polling a file, updating a status label, or animating a sprite at a fixed sub-FPS rate independent of the render frame rate.
+</Tip>

@@ -1,0 +1,116 @@
+---
+title: "Events and Input Handling in LWXGL"
+sidebarTitle: "Events"
+description: "Register callbacks for keyboard, mouse, resize, scroll, and window-close events. Query mouse state and key state inside the per-frame callback."
+---
+
+LWXGL processes all X11 events inside `MainWindowLoop` at the start of each frame tick. Pending events are drained from the Xlib event queue and dispatched through a handler table to built-in logic (element interaction, modal handling, scroll) and then to any user-registered callbacks. Your application hooks into this pipeline by registering callbacks before calling `MainWindowLoop`, or by polling input state inside the `on_every` per-frame function.
+
+## Registering Callbacks
+
+| Function | Callback Signature | Description |
+|---|---|---|
+| `EventAttachKey(callback)` | `void callback(int key)` | Called on each key press. Receives the ASCII character code or a special key constant. Not called when a focused element (Input, Console) consumes the keystroke. |
+| `EventAttachClick(callback)` | `void callback(int x, int y, int btn)` | Called on mouse button release when no element claims the click. `x` and `y` are the cursor position; `btn` is the button index (1=left, 2=middle, 3=right). |
+| `EventAttachDelete(callback)` | `int callback(void)` | Called when the window's close button is pressed (WM_DELETE_WINDOW). Return `1` to allow the window to close, or `0` to cancel and keep the window open. If no callback is registered the window always closes immediately. |
+| `EnableResizing(callback)` | `void callback(int w, int h)` | Called when the window is resized. Must be called **after** `CreateWindow`. Receives the new pixel width and height. |
+
+```c
+void key_handler(int key) {
+    if (key == 'q') DeleteWindow();
+}
+
+void click_handler(int x, int y, int btn) {
+    if (btn == 1) {
+        // Left click at (x, y) that no element handled
+    }
+}
+
+int delete_handler(void) {
+    // Return 0 to show a "are you sure?" dialog, 1 to confirm exit
+    return 1;
+}
+
+void resize_handler(int w, int h) {
+    // Re-layout elements for the new window size
+    ElemModifyBounds(ID_PANEL, 0, 0, w, h);
+}
+
+EventAttachKey(key_handler);
+EventAttachClick(click_handler);
+EventAttachDelete(delete_handler);
+EnableResizing(resize_handler); // Must be after CreateWindow
+```
+
+## Special Key Constants
+
+Printable ASCII characters (space through `~`, codes 32–126) are delivered to the key callback directly. The Enter/Return key is normalized to `10` (line feed). Non-printable keys use the constants defined in `libLWXGL.h`:
+
+| Constant | Value | Description |
+|---|---|---|
+| `KEY_LEFT` | 170 | Left arrow key |
+| `KEY_RIGHT` | 171 | Right arrow key |
+| `KEY_UP` | 172 | Up arrow key |
+| `KEY_DOWN` | 173 | Down arrow key |
+| `KEY_FN` | 150 | Base value for function keys |
+
+Function keys F1–F12 are encoded as `KEY_FN + n`, where `n` is the function key number (1–12). For example, F1 = `151`, F5 = `155`, F12 = `162`.
+
+```c
+void key_handler(int key) {
+    if (key == KEY_UP)           move_up();
+    if (key == KEY_DOWN)         move_down();
+    if (key == KEY_FN + 1)       show_help();   // F1
+    if (key == KEY_FN + 12)      /* F12 is reserved — see Tip below */ ;
+}
+```
+
+## Querying Mouse State
+
+Rather than relying solely on the click callback, you can poll the current mouse position and button state at any point during `on_every` using `QueryMouse`:
+
+```c
+void on_every(int tick, float dt) {
+    int x, y, btn;
+    QueryMouse(&x, &y, &btn);
+    // x, y: current cursor position in window coordinates
+    // btn: 0=none pressed, 1=left, 2=middle, 3=right,
+    //      4=scroll wheel up, 5=scroll wheel down
+}
+```
+
+`x` and `y` are set to `-1` when the cursor is outside the window. `btn` reflects the button currently held down, matching the X11 button numbering.
+
+## Querying Keyboard State
+
+For actions that depend on keys being **held** rather than just tapped, use the keyboard state functions. LWXGL tracks up to 8 simultaneously held keys:
+
+```c
+// Returns a pointer to an 8-byte array of currently held character codes.
+unsigned char* keys = QueryKeyboard();
+
+// Returns 1 if the given character/constant is currently held down.
+if (QueryKeyDown(KEY_LEFT)) {
+    player_x -= speed * dt;
+}
+if (QueryKeyDown('w') || QueryKeyDown(KEY_UP)) {
+    player_y -= speed * dt;
+}
+```
+
+`QueryKeyDown` accepts the same character codes and special key constants that the key callback receives, making it easy to share logic between the two input models. Xlib auto-repeat is explicitly disabled by LWXGL (`XkbSetDetectableAutoRepeat`), so held keys appear exactly once in the state array rather than generating repeated press events.
+
+## Built-in Element Event Handling
+
+Several element types consume input events before they reach your registered callbacks. This processing happens automatically inside `MainWindowLoop`:
+
+- **Button (type 1):** On a left mouse button release over the button's bounding box, the element's `onclick` function is called. The click is consumed and does not reach `EventAttachClick`.
+- **Checkbox (type 5):** On a left mouse button release over the checkbox, the checked state toggles. The click is consumed.
+- **Input (type 2):** When the cursor is inside an Input element, key presses are routed to the element's character buffer. Printable characters (32–126) are appended up to the configured maximum length; Backspace (`8`) removes the last character. Key events are consumed and do not reach `EventAttachKey`.
+- **Console (type 6):** Scroll wheel events (buttons 4 and 5) over a Console element scroll its content by 3 lines. Pressing Space while hovering scrolls to the bottom. These events are consumed before the user callback.
+
+In all cases, built-in element handling takes priority over user callbacks. If no element claims the event, it propagates to the registered handler.
+
+<Tip>
+`Ctrl+Escape` always closes the window immediately, regardless of any delete callback registered with `EventAttachDelete`. F12 toggles an internal debug overlay that shows per-frame work time and current FPS — this key is intercepted before the key callback and is not forwarded to your application.
+</Tip>

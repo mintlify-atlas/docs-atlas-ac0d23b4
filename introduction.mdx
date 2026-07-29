@@ -1,0 +1,87 @@
+---
+title: "LWXGL: Lightweight X11 Graphics Library for C/C++"
+sidebarTitle: "Introduction"
+description: "LWXGL is a lightweight shared library that wraps Xlib to provide a retained element system, image canvas, OpenGL surfaces, and event callbacks for Linux GUI apps."
+---
+
+LWXGL (Lightweight X11 Graphics Library) is a C/C++ shared library (`libLWXGL.so`) that wraps Xlib to make building Linux GUI applications straightforward without pulling in a heavyweight toolkit. Its design philosophy centres on three ideas: a **retained element system** where you assign integer IDs to every widget and LWXGL tracks their state across frames; a **fixed 16-color palette** that maps symbolic names such as `CLR_BLUE` or `CLR_WHITE` to Xlib pixel values at startup; and a **double-buffered main loop** that composites all elements onto a back-buffer pixmap before blitting to the screen, giving flicker-free rendering at a configurable frame rate.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Retained Elements" icon="layer-group">
+    Create buttons, text labels, input fields, rectangles, ellipses, consoles, and checkboxes once by ID. LWXGL stores their state and redraws them every frame automatically.
+  </Card>
+  <Card title="Immediate Drawing" icon="pen-to-square">
+    `ImmediateRect`, `ImmediateLine`, `ImmediateEllipse`, and `ImmediateText` let you draw directly onto the current frame without registering a persistent element — ideal for per-frame overlays and HUDs.
+  </Card>
+  <Card title="Image Canvas & Primitives" icon="image">
+    `CreateImage` gives you a raw RGBA pixel buffer. `PrimitiveRect`, `PrimitiveLine`, `PrimitiveCircle`, `PrimitiveTriangle`, and `PrimitiveSprite` paint palette-indexed shapes and sprite data into any image element.
+  </Card>
+  <Card title="TGA & XBM Image Loading" icon="file-image">
+    `AllocateTGA` and `AllocateXBM` load indexed image assets from disk (or memory) into a named slot. `CreateTGAImage` and `CreateXBMImage` then place them as retained elements. Loaded TGAs can optionally overwrite palette entries.
+  </Card>
+  <Card title="OpenGL Surfaces" icon="cube">
+    `CreateOpenGL` embeds a GLX-backed pixmap surface anywhere in the window. `ChangeGLXContext` binds its context for standard OpenGL calls; `SynchronizeOpenGL` copies the rendered result into the compositor.
+  </Card>
+  <Card title="Event System" icon="bolt">
+    Attach global callbacks for keyboard (`EventAttachKey`), mouse clicks (`EventAttachClick`), and window-close (`EventAttachDelete`). Query real-time mouse state with `QueryMouse` or poll individual keys with `QueryKeyDown`.
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+### Element ID System
+
+Every visible widget in LWXGL is identified by a developer-assigned integer ID. You choose the ID yourself when calling any `Create*` function — there is no auto-increment or handle returned. This makes it easy to reference elements later with `DeleteElement`, `ElemModifyBounds`, `ElemSetVisible`, or `ElemInside` using the same constant you defined at creation time. IDs are stored in a flat array internally; gaps are allowed.
+
+### The 16-Color Palette
+
+LWXGL allocates exactly 16 Xlib pixel values at `CreateWindow` time, one for each of the predefined palette entries (indices `0x0`–`0xF`). Every color parameter throughout the API takes one of these palette index integers — not an RGB tuple or a hex color string. The symbolic constants are defined in `libLWXGL.h`:
+
+| Index | Constant      | Index | Constant       |
+|-------|---------------|-------|----------------|
+| `0x0` | `CLR_BLACK`   | `0x8` | `CLR_GRAY`     |
+| `0x1` | `CLR_BLUE`    | `0x9` | `CLR_LBLUE`    |
+| `0x2` | `CLR_GREEN`   | `0xA` | `CLR_LGREEN`   |
+| `0x3` | `CLR_CYAN`    | `0xB` | `CLR_LCYAN`    |
+| `0x4` | `CLR_RED`     | `0xC` | `CLR_LRED`     |
+| `0x5` | `CLR_MAGENTA` | `0xD` | `CLR_LMAGENTA` |
+| `0x6` | `CLR_ORANGE`  | `0xE` | `CLR_YELLOW`   |
+| `0x7` | `CLR_LGRAY`   | `0xF` | `CLR_WHITE`    |
+
+You can inspect the RGB values of any slot at runtime with `PaletteQuery`, change a slot with `PaletteModify`, and restore the defaults with `PaletteReset`.
+
+<Note>
+LWXGL uses a fixed 16-color palette (indices 0–15). All color parameters take palette index integers, not RGB values. Passing an out-of-range value or a raw hex color will produce undefined behavior.
+</Note>
+
+### The Main Window Loop
+
+`MainWindowLoop(int target_fps, void (*on_every)(int, float))` is a blocking call that drives the entire application. On each frame it:
+
+1. Calls `_handle_window_events()` to dispatch queued X11 events to registered callbacks.
+2. Calls `_render_window()`, which clears the back-buffer pixmap to the background color, composites every visible retained element in order, runs any `Immediate*` calls made inside `on_every`, then blits the completed pixmap to the visible window.
+3. Executes any `NewQueuedTask` callbacks whose scheduled time has elapsed.
+4. Sleeps for the remainder of the frame budget so CPU usage stays proportional to `target_fps`.
+
+The loop exits when the window's close button is clicked (or `EventAttachDelete` returns a non-zero value).
+
+### Rendering Pipeline
+
+LWXGL maintains a back-buffer `Pixmap` (called `bb` internally) the same size as the window (or taller when scrolling is enabled). Every frame, all retained elements are drawn onto `bb` using the shared `GC`. Immediate-draw calls are also routed to `bb` during the `on_every` callback. At the end of each frame the compositor copies the appropriate region of `bb` to the on-screen `Window` in a single `XCopyArea` call, eliminating visible tearing or partial updates.
+
+The rendering order — whether retained elements are drawn before or after the `on_every` callback — is configurable via `SetRenderingOrder(ORDER_ELEM_FIRST)` or `SetRenderingOrder(ORDER_ELEM_SECOND)`.
+
+## Platform Requirements
+
+LWXGL targets **Linux only**. The following system components are required at both build time and runtime:
+
+- **X11 / Xlib** — the core display server protocol (`libX11`).
+- **OpenGL / GLX** — required even if you do not use `CreateOpenGL`, because the library links against `libGL` unconditionally.
+- **g++ with C++17** support — the source uses `std::chrono`, structured bindings, and other C++17 features.
+
+Optional but recommended:
+
+- **Mesa** (`mesa-common-dev`) — provides software OpenGL fallback on systems without a discrete GPU.
+- **A compositing window manager** — improves visual quality when using transparent or blended elements.

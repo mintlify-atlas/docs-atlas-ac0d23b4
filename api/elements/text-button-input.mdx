@@ -1,0 +1,226 @@
+---
+title: "Text Labels, Buttons, and Input Fields"
+sidebarTitle: "Text, Button, Input"
+description: "Create and manage text label, button, and single-line text input elements — the core interactive UI elements in LWXGL."
+---
+
+Text labels, buttons, and input fields are the foundational interactive elements of any LWXGL interface. Labels render a static or dynamic string using the global X11 font. Buttons provide clickable regions with three distinct visual states. Input fields capture keyboard entry when the mouse cursor is inside them, storing up to 128 characters that can be retrieved at any time with `GetInput`.
+
+All element IDs are application-defined integers. An ID must be unique across all element types — it serves as the index into LWXGL's internal element slot array.
+
+---
+
+## `CreateText`
+
+```c
+void CreateText(int id, int x, int y, const char* text, int color);
+```
+
+Creates a text label element that renders `text` at position `(x, y)` using the current global font (`9x15` or `9x15bold`). The string pointer is stored directly — **it is not copied** — so the memory it points to must remain valid for the entire lifetime of the element.
+
+<ParamField path="id" type="int" required>
+  Unique element ID. If a slot at this index already holds an element, behavior is undefined.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the text baseline origin in pixels, relative to the window's top-left corner.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the text baseline origin in pixels.
+</ParamField>
+
+<ParamField path="text" type="const char*" required>
+  Null-terminated string to display. The pointer must remain valid until `DeleteElement(id)` is called. To use a temporary or stack-allocated string, use `CreateCopiedText` instead.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) or `CLR_*` constant for the text foreground color.
+</ParamField>
+
+---
+
+## `CreateCopiedText`
+
+```c
+void CreateCopiedText(int id, int x, int y, const char* text, int color);
+```
+
+Identical to `CreateText`, except that `text` is duplicated internally with `strdup`. The caller can free or reuse the original pointer immediately after this call returns. The duplicated copy is freed automatically when `DeleteElement(id)` is called.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the text baseline origin in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the text baseline origin in pixels.
+</ParamField>
+
+<ParamField path="text" type="const char*" required>
+  Null-terminated string to display. The string is copied; the original pointer can be freed after this call.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) or `CLR_*` constant for the text foreground color.
+</ParamField>
+
+<Tip>
+Use `CreateText` with a long-lived `const char*` literal for static labels. Use `CreateCopiedText` when the string is built dynamically — for example from `snprintf` into a local buffer.
+</Tip>
+
+---
+
+## `CreateButton`
+
+```c
+void CreateButton(int id, int x, int y, int w, int h,
+                  int u, int hvr, int p,
+                  const char* label, void (*onclick)(void));
+```
+
+Creates a rectangular button element with three background color states (unpressed, hover, pressed) and a centered text label. The `onclick` callback is invoked on a left mouse button release while the cursor is inside the button bounds.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the button's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the button's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the button in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the button in pixels.
+</ParamField>
+
+<ParamField path="u" type="int" required>
+  Unpressed (idle) background color — palette index (0–15) or `CLR_*` constant.
+</ParamField>
+
+<ParamField path="hvr" type="int" required>
+  Hover background color — shown when the mouse cursor is inside the button but no button is held.
+</ParamField>
+
+<ParamField path="p" type="int" required>
+  Pressed background color — shown while the left mouse button is held down inside the button.
+</ParamField>
+
+<ParamField path="label" type="const char*" required>
+  Null-terminated label string rendered centered in the button. The pointer is stored directly (not copied) and must remain valid for the element's lifetime.
+</ParamField>
+
+<ParamField path="onclick" type="void (*)(void)" required>
+  Function called when the button is clicked. Pass `NULL` for a non-interactive button (visual-only).
+</ParamField>
+
+---
+
+## `CreateInput`
+
+```c
+void CreateInput(int id, int x, int y, int w, int h, int u, int hvr, int max);
+```
+
+Creates a single-line text input field. The element captures keyboard events when the mouse cursor is inside its bounds, writing typed characters into an internal 128-byte buffer. The input becomes active (focused) on mouse entry and inactive on mouse exit.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the input field's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the input field's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the input field in pixels. Pass `-1` to auto-compute the width as `(max + 1) * 9 + 10` pixels, which is exactly wide enough to display `max` characters in the `9x15` font with padding.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the input field in pixels.
+</ParamField>
+
+<ParamField path="u" type="int" required>
+  Inactive (unfocused) background color — palette index (0–15) or `CLR_*` constant.
+</ParamField>
+
+<ParamField path="hvr" type="int" required>
+  Active/hover background color — shown when the cursor is inside the field.
+</ParamField>
+
+<ParamField path="max" type="int" required>
+  Maximum number of characters the field will accept. Clamped internally to **127** regardless of the value passed. The internal buffer is always 128 bytes (127 characters + null terminator).
+</ParamField>
+
+---
+
+## `GetInput`
+
+```c
+char* GetInput(int id);
+```
+
+Returns a direct pointer to the input element's internal character buffer. The buffer is null-terminated and at most 128 bytes (127 characters + `'\0'`). The pointer remains valid until `DeleteElement(id)` is called.
+
+<ParamField path="id" type="int" required>
+  ID of an existing input element created with `CreateInput`.
+</ParamField>
+
+<Warning>
+Do not `free()` the returned pointer. The buffer is owned by the element and freed by `DeleteElement`.
+</Warning>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <string.h>
+
+#define ID_LABEL   0
+#define ID_INPUT   1
+#define ID_BUTTON  2
+
+static const char* greeting = "Enter your name and click Submit.";
+
+static void on_submit(void) {
+    char* name = GetInput(ID_INPUT);
+    if (strlen(name) == 0) return;
+
+    /* Update the label text — use CreateCopiedText to handle a dynamic string */
+    DeleteElement(ID_LABEL);
+    CreateCopiedText(ID_LABEL, 20, 20, name, CLR_LGREEN);
+}
+
+int main(void) {
+    if (CreateWindow(400, 200, "Input Demo", CLR_BLACK) != 0) return 1;
+
+    CreateText(ID_LABEL, 20, 20, greeting, CLR_WHITE);
+
+    /* Auto-width input for up to 20 characters */
+    CreateInput(ID_INPUT, 20, 60, -1, 24, CLR_GRAY, CLR_LGRAY, 20);
+
+    CreateButton(ID_BUTTON, 20, 100, 100, 30,
+                 CLR_BLUE, CLR_LBLUE, CLR_CYAN,
+                 "Submit", on_submit);
+
+    MainWindowLoop(60, NULL);
+    TerminateWindow();
+    return 0;
+}
+```

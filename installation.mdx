@@ -1,0 +1,128 @@
+---
+title: "Install LWXGL on Linux"
+sidebarTitle: "Installation"
+description: "Build libLWXGL.so from source with make, install the shared library and header to /usr/local/lib and /usr/local/include, then link against it."
+---
+
+LWXGL is distributed as C++ source and must be compiled locally. There are no pre-built binaries. The build system requires `g++` (C++17) and GNU Make; the output is a single shared object, `libLWXGL.so`, which you then install system-wide. The whole process takes under a minute on any modern Linux machine.
+
+## Prerequisites
+
+You need the following packages before building:
+
+- **g++** — the GNU C++ compiler with C++17 support (GCC 7 or later).
+- **libx11-dev** — Xlib headers and the `libX11` shared library.
+- **libgl-dev** or **mesa-common-dev** — OpenGL and GLX headers (`GL/gl.h`, `GL/glx.h`).
+- **make** — GNU Make.
+
+Install them with your distro's package manager:
+
+<CodeGroup>
+
+```bash Ubuntu / Debian
+sudo apt update
+sudo apt install g++ libx11-dev libgl-dev make
+```
+
+```bash Fedora / RHEL
+sudo dnf install gcc-c++ libX11-devel mesa-libGL-devel make
+```
+
+</CodeGroup>
+
+## Build and Install
+
+<Steps>
+  <Step title="Clone the repository">
+    Download the LWXGL source and enter the project directory:
+
+    ```bash
+    git clone https://github.com/DRESSedAlarm184/LWXGL.git && cd LWXGL
+    ```
+  </Step>
+
+  <Step title="Build the shared library">
+    Run `make` to compile `libLWXGL.so`:
+
+    ```bash
+    make
+    ```
+
+    The Makefile compiles all sources with `g++ -std=gnu++17 -fPIC -shared` and links against `-lX11 -lGL`. The default optimization level is `-O2`; you can override it with the `O=` variable:
+
+    ```bash
+    make O=3   # maximum optimization
+    make O=0   # disable optimization (useful for debugging)
+    ```
+
+    A successful build produces `libLWXGL.so` in the project root.
+  </Step>
+
+  <Step title="Install system-wide">
+    Copy the library and header to the standard system paths:
+
+    ```bash
+    sudo make install
+    ```
+
+    This runs three commands:
+
+    ```
+    cp libLWXGL.so  /usr/local/lib
+    cp src/libLWXGL.h /usr/local/include
+    ldconfig
+    ```
+
+    After `ldconfig` the dynamic linker knows about `libLWXGL.so` and programs can link against `-lLWXGL` without specifying a path.
+  </Step>
+</Steps>
+
+## Linking Your Program
+
+Include `libLWXGL.h` in your source and link against `LWXGL`, `X11`, and `GL` at compile time:
+
+```bash
+g++ myapp.cc -o myapp -lLWXGL -lX11 -lGL
+```
+
+For C projects compiled with `gcc`, the flags are identical because `libLWXGL.h` wraps all declarations in `extern "C"` automatically:
+
+```bash
+gcc myapp.c -o myapp -lLWXGL -lX11 -lGL
+```
+
+<Tip>
+If the linker or runtime loader reports that `libLWXGL.so` cannot be found after `sudo make install`, run `sudo ldconfig` manually to refresh the linker cache. Alternatively, point the loader at the build directory for a quick test:
+
+```bash
+LD_LIBRARY_PATH=/path/to/LWXGL ./myapp
+```
+</Tip>
+
+## Verify the Installation
+
+The following minimal program opens an LWXGL window and immediately destroys it. If it exits without error, your installation is working correctly.
+
+```c
+#include <libLWXGL.h>
+
+int main(void) {
+    int result = CreateWindow(320, 240, "LWXGL test", CLR_BLACK);
+    if (result != 0) return result;   /* non-zero means failure */
+    TerminateWindow();
+    return 0;
+}
+```
+
+Compile and run:
+
+```bash
+gcc verify.c -o verify -lLWXGL -lX11 -lGL
+./verify
+```
+
+A window will flash briefly on screen and close. A clean exit (status 0) confirms that the library is installed and linked correctly.
+
+<Note>
+`CreateWindow` returns `0` on success. It returns `1` if `XOpenDisplay` fails (no display available), `2` if the default X11 bitmap font cannot be loaded, and `3` if a window is already open. Values `128`–`143` indicate that Xlib was unable to allocate one of the 16 palette colors.
+</Note>

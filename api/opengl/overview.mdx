@@ -1,0 +1,172 @@
+---
+title: "OpenGL Element API: GLX Surface Integration"
+sidebarTitle: "OpenGL"
+description: "Create a GLX-backed OpenGL surface element, manage contexts, synchronize rendering, and convert TGA images to OpenGL textures."
+---
+
+LWXGL can host an OpenGL rendering surface as a first-class window element by creating a `GLXPixmap`-backed `OpenGLElement`. The surface composites seamlessly into the LWXGL back-buffer alongside other retained elements (text, buttons, image canvases) without requiring a separate window. You switch the active GLX context before issuing OpenGL commands, render into the pixmap, synchronize with `SynchronizeOpenGL`, then let LWXGL composite the result every frame. TGA assets already loaded into the LWXGL cache can be uploaded to GPU memory in one call via `GLConvertTGA`.
+
+<Warning>
+OpenGL elements require the X display to be running at a color depth of 24 or 32 bits per pixel. `CreateOpenGL` returns `0` and does nothing if the depth condition is not met or if no compatible `FBConfig` can be found.
+</Warning>
+
+## `CreateOpenGL`
+
+Creates an OpenGL element backed by a GLX pixmap surface.
+
+```c
+int CreateOpenGL(int id, int x, int y, int w, int h, int border);
+```
+
+LWXGL queries `glXChooseFBConfig` for an FBConfig that is renderable, pixmap-drawable, RGBA, non-double-buffered, with 8 bits each for red, green, blue, and alpha channels, a 24-bit depth buffer, and an 8-bit stencil buffer. It then walks the returned list until it finds a config whose associated visual matches the current display depth. A `GLXPixmap` and a `GLXContext` are created from the matching config.
+
+When `border` is a valid palette index (≥ 0), the element's stored dimensions are expanded by 1 pixel on all sides (`w + 2`, `h + 2`) and LWXGL draws a 1-pixel border in that color when compositing the element. Pass `CLR_NONE` (`-1`) for no border.
+
+**Returns:** `1` on success, `0` if the depth requirement is not met or no compatible `FBConfig` is found.
+
+<ParamField path="id" type="int" required>
+  Element ID to assign to the new OpenGL surface.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X position of the element within the window.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y position of the element within the window.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the OpenGL rendering surface in pixels (before border expansion).
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the OpenGL rendering surface in pixels (before border expansion).
+</ParamField>
+
+<ParamField path="border" type="int" required>
+  Palette index (0–15) for a 1-pixel border drawn around the element, or `CLR_NONE` (`-1`) for no border.
+</ParamField>
+
+---
+
+## `ChangeGLXContext`
+
+Makes the GLX context of the specified element current, or detaches all contexts.
+
+```c
+void ChangeGLXContext(int id);
+```
+
+Calls `glXMakeContextCurrent` with both read and draw drawables set to the element's `GLXPixmap`. All subsequent OpenGL calls on the calling thread will target that pixmap until `ChangeGLXContext` is called again. Pass `-1` to detach all contexts (`glXMakeContextCurrent(display, None, None, NULL)`), which is automatically done during `TerminateWindow`.
+
+<ParamField path="id" type="int" required>
+  ID of the `OpenGLElement` whose context to make current, or `-1` to detach all contexts.
+</ParamField>
+
+---
+
+## `SynchronizeOpenGL`
+
+Flushes the OpenGL command queue and waits for all GL commands to complete before LWXGL composites the pixmap.
+
+```c
+void SynchronizeOpenGL();
+```
+
+Calls `glFlush()` followed by `glXWaitGL()`. This ensures that all OpenGL rendering commands issued since the last `ChangeGLXContext` call have been executed and their results are visible in the backing `GLXPixmap` before LWXGL reads the pixmap into the back-buffer. Call this at the end of your per-frame OpenGL drawing block, before returning from `on_every`.
+
+<Note>
+`SynchronizeOpenGL` does not swap buffers — LWXGL OpenGL elements are single-buffered by design (the FBConfig is requested with `GLX_DOUBLEBUFFER False`). The result is composited directly from the pixmap.
+</Note>
+
+---
+
+## `GLConvertTGA`
+
+Converts a named TGA asset in the LWXGL cache to an OpenGL RGBA texture and returns its texture ID.
+
+```c
+unsigned int GLConvertTGA(const char* name);
+```
+
+Allocates a new `GL_TEXTURE_2D` texture, then iterates over the TGA's pixel data converting palette indices to RGBA values using the TGA's embedded 48-byte BGR palette. The image is vertically flipped during conversion (TGA row 0 → GL bottom row). Pixels whose palette index matches the TGA's `transparent` value are written with alpha `0`; all other pixels receive alpha `255`. Texture filtering is set to `GL_NEAREST` (no interpolation), and wrap mode to `GL_REPEAT`.
+
+The function restores the previously bound `GL_TEXTURE_2D` after uploading, so it is safe to call mid-frame without disrupting your existing texture bindings. A current GLX context (set by `ChangeGLXContext`) must be active when this function is called.
+
+**Returns:** `GLuint` texture ID (> 0) on success. Returns `0` if the TGA name is not found in the cache or if the TGA has no palette (e.g., an XBM loaded into the TGA cache).
+
+<ParamField path="name" type="const char*" required>
+  Cache key of a TGA previously loaded with `AllocateTGA` or `AllocateMemoryTGA`.
+</ParamField>
+
+---
+
+## Code example
+
+The following example creates a 256×256 OpenGL surface element and renders a spinning colored triangle each frame.
+
+```c
+#include "libLWXGL.h"
+#include <GL/gl.h>
+#include <math.h>
+
+#define GL_ELEM_ID  5
+#define GL_W        256
+#define GL_H        256
+
+static GLuint tex = 0;
+
+void on_every(int tick, float dt) {
+    // Switch to the OpenGL element's context
+    ChangeGLXContext(GL_ELEM_ID);
+
+    glViewport(0, 0, GL_W, GL_H);
+    glClearColor(0.05f, 0.05f, 0.05f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // Rotate the triangle over time
+    float angle = (float)GetElapsedTime() * 60.0f;
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glRotatef(angle, 0.0f, 0.0f, 1.0f);
+
+    // Draw a colored triangle
+    glBegin(GL_TRIANGLES);
+        glColor3f(1.0f, 0.2f, 0.2f);  glVertex2f( 0.0f,  0.7f);
+        glColor3f(0.2f, 1.0f, 0.2f);  glVertex2f(-0.6f, -0.5f);
+        glColor3f(0.2f, 0.2f, 1.0f);  glVertex2f( 0.6f, -0.5f);
+    glEnd();
+
+    // Flush GL commands and wait before LWXGL composites
+    SynchronizeOpenGL();
+
+    // Detach context so LWXGL can access the pixmap safely
+    ChangeGLXContext(-1);
+}
+
+int main(void) {
+    CreateWindow(400, 320, "OpenGL Element Demo", CLR_BLACK);
+
+    // Create the OpenGL surface with a white border
+    if (!CreateOpenGL(GL_ELEM_ID, 70, 30, GL_W, GL_H, CLR_WHITE)) {
+        return 1;  // Incompatible display depth or no FBConfig
+    }
+
+    // Optionally load a TGA and convert it to an OpenGL texture
+    ChangeGLXContext(GL_ELEM_ID);
+    if (AllocateTGA("sprite", "assets/sprite.tga", 0, 0) == 0) {
+        tex = GLConvertTGA("sprite");
+    }
+    ChangeGLXContext(-1);
+
+    MainWindowLoop(60, on_every);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Always call `ChangeGLXContext(-1)` after `SynchronizeOpenGL` so the GLX context is not current when LWXGL's compositor reads the pixmap. Leaving the context current can cause undefined behavior on some drivers.
+</Tip>

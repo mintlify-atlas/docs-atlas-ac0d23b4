@@ -1,0 +1,227 @@
+---
+title: "Immediate-Mode Drawing Functions"
+sidebarTitle: "Immediates"
+description: "Draw text, rectangles, ellipses, and lines directly to the back-buffer each frame without managing element IDs — cleared automatically before the next frame."
+---
+
+Immediate-mode functions draw directly to the LWXGL back-buffer pixmap rather than into a retained element. Because the back-buffer is cleared and recomposited at the start of every frame, anything drawn with an immediate function disappears before the next `on_every` invocation — there are no IDs to manage and no explicit cleanup required. Call them inside your `on_every` callback to produce overlays, HUDs, debug visualizations, or any other per-frame decoration that should not persist between frames. All immediate functions use palette-indexed colors consistent with the global 16-entry LWXGL palette.
+
+## `ImmediateText`
+
+Draws a multi-line string directly to the back-buffer using the global X11 font (`9x15` or `9x15bold`).
+
+```c
+void ImmediateText(int x, int y, const char* str, int color);
+```
+
+Internally the y coordinate is offset by `+11` pixels before the first `XDrawString` call (baseline adjustment for the `9x15` bitmap font). Each newline character `'\n'` in `str` advances y by a further 15 pixels and resets the draw cursor to the original x position.
+
+<ParamField path="x" type="int" required>
+  Left edge of the text in back-buffer coordinates.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top of the first text line. The actual X11 baseline will be at `y + 11`.
+</ParamField>
+
+<ParamField path="str" type="const char*" required>
+  Null-terminated string to draw. Embed `'\n'` for line breaks; each line advances y by 15 pixels.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) for the text foreground color.
+</ParamField>
+
+---
+
+## `ImmediateTextF`
+
+Printf-style wrapper around `ImmediateText` for formatted output.
+
+```c
+void ImmediateTextF(int x, int y, int color, const char* fmt, ...);
+```
+
+The format string and variadic arguments are expanded with `vasprintf` into a heap-allocated buffer, which is passed to `ImmediateText` and then freed. Note that the parameter order differs slightly from `ImmediateText`: `color` comes before `fmt`.
+
+<ParamField path="x" type="int" required>
+  Left edge of the text in back-buffer coordinates.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Top of the first text line (same baseline offset as `ImmediateText` applies).
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) for the text foreground color.
+</ParamField>
+
+<ParamField path="fmt" type="const char*" required>
+  `printf`-compatible format string.
+</ParamField>
+
+<ParamField path="..." type="variadic" required>
+  Arguments matching the conversion specifiers in `fmt`.
+</ParamField>
+
+---
+
+## `ImmediateRect`
+
+Draws a rectangle outline and/or fill directly to the back-buffer via Xlib.
+
+```c
+void ImmediateRect(int x, int y, int w, int h, int fg, int bg);
+```
+
+The fill (`bg`) is rendered with `XFillRectangle` and covers the full `w × h` area before the outline is drawn. The outline (`fg`) is rendered with `XDrawRectangle` using a bounding box of `(w-1) × (h-1)` so that the outer edge stays within the declared bounds. Pass `CLR_NONE` (`-1`) for either parameter to skip that layer.
+
+<ParamField path="x" type="int" required>
+  X coordinate of the rectangle's top-left corner.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the rectangle's top-left corner.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Palette index for the outline, or `CLR_NONE` to omit.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Palette index for the fill, or `CLR_NONE` to omit.
+</ParamField>
+
+---
+
+## `ImmediateEllipse`
+
+Draws an ellipse inscribed within a bounding box directly to the back-buffer.
+
+```c
+void ImmediateEllipse(int x, int y, int w, int h, int fg, int bg);
+```
+
+Uses `XFillArc` for the fill and `XDrawArc` for the outline, both spanning the full 360° arc (0 to 23040 units in X11's 1/64-degree notation). Pass `CLR_NONE` for either color to omit that layer.
+
+<ParamField path="x" type="int" required>
+  X coordinate of the bounding box's top-left corner.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the bounding box's top-left corner.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the bounding box (and the ellipse's horizontal diameter).
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the bounding box (and the ellipse's vertical diameter).
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Palette index for the ellipse outline, or `CLR_NONE` to omit.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Palette index for the ellipse fill, or `CLR_NONE` to omit.
+</ParamField>
+
+---
+
+## `ImmediateLine`
+
+Draws a straight line between two back-buffer coordinates.
+
+```c
+void ImmediateLine(int x1, int y1, int x2, int y2, int color);
+```
+
+Delegates directly to `XDrawLine` using the current GC line attributes (solid, 1px, butt caps). The line is drawn in a single Xlib round-trip.
+
+<ParamField path="x1" type="int" required>
+  X coordinate of the line start point.
+</ParamField>
+
+<ParamField path="y1" type="int" required>
+  Y coordinate of the line start point.
+</ParamField>
+
+<ParamField path="x2" type="int" required>
+  X coordinate of the line end point.
+</ParamField>
+
+<ParamField path="y2" type="int" required>
+  Y coordinate of the line end point.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) for the line color.
+</ParamField>
+
+---
+
+## Code example
+
+The snippet below shows a typical HUD drawn every frame using `ImmediateTextF`, `ImmediateRect`, and `ImmediateLine`.
+
+```c
+#include "libLWXGL.h"
+
+static int score = 0;
+static int health = 80;
+
+// Called every frame by MainWindowLoop
+void on_every(int tick, float dt) {
+    // Semi-transparent HUD background panel (fill only, no border)
+    ImmediateRect(8, 8, 200, 44, CLR_NONE, CLR_GRAY);
+
+    // White border around the panel
+    ImmediateRect(8, 8, 200, 44, CLR_WHITE, CLR_NONE);
+
+    // Score counter — line 1
+    ImmediateTextF(16, 12, CLR_YELLOW, "SCORE  %06d", score);
+
+    // Health bar label — line 2
+    ImmediateTextF(16, 27, CLR_LGREEN, "HEALTH %d%%", health);
+
+    // Health bar background
+    ImmediateRect(100, 29, 100, 8, CLR_NONE, CLR_DGRAY);
+
+    // Health bar fill — width proportional to health
+    int bar_w = health;
+    int bar_col = health > 50 ? CLR_LGREEN : health > 25 ? CLR_YELLOW : CLR_LRED;
+    ImmediateRect(100, 29, bar_w, 8, CLR_NONE, bar_col);
+
+    // Crosshair lines
+    int cx = 320, cy = 240;
+    ImmediateLine(cx - 12, cy,      cx - 4, cy,      CLR_WHITE);
+    ImmediateLine(cx + 4,  cy,      cx + 12, cy,     CLR_WHITE);
+    ImmediateLine(cx,      cy - 12, cx,      cy - 4, CLR_WHITE);
+    ImmediateLine(cx,      cy + 4,  cx,      cy + 12, CLR_WHITE);
+}
+
+int main(void) {
+    CreateWindow(640, 480, "HUD Demo", CLR_BLACK);
+    MainWindowLoop(60, on_every);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Warning>
+Immediate draws happen on the back-buffer **after** it has been cleared and all retained elements have been composited. Any immediate-mode output will always appear on top of image, rect, and text elements but will be gone the next frame — do not rely on them persisting.
+</Warning>
+
+<Tip>
+Use `ImmediateTextF` for debug overlays during development. It is far more convenient than maintaining a `CreateText` element just for variable inspection.
+</Tip>

@@ -1,0 +1,149 @@
+---
+title: "Embedding OpenGL in an LWXGL Window"
+sidebarTitle: "OpenGL"
+description: "Create a GLX-backed OpenGL surface element inside an LWXGL window, make it the active context, render with standard OpenGL calls, and synchronize before compositing."
+---
+
+LWXGL supports embedding a hardware-accelerated OpenGL surface inside a window via a GLX pixmap. The surface appears as a regular LWXGL element — sized and positioned like any other — but receives OpenGL draw calls instead of palette-indexed pixels. This lets you mix retained UI elements and OpenGL rendering in the same window without an additional toolkit or window split.
+
+## Requirements
+
+The display depth must be **24 or 32 bpp**. `CreateOpenGL` queries `glXChooseFBConfig` for a matching framebuffer configuration and returns `0` immediately if none is found. Check the return value before proceeding.
+
+## Creating the OpenGL Element
+
+```c
+int CreateOpenGL(int id, int x, int y, int w, int h, int border);
+```
+
+- **`id`** — integer element slot, used in subsequent `ChangeGLXContext` calls.
+- **`x`, `y`** — position of the surface within the window.
+- **`w`, `h`** — dimensions of the OpenGL rendering surface in pixels.
+- **`border`** — palette color index for a 1-pixel decorative border drawn around the surface by the LWXGL compositor. Pass `CLR_NONE` (`-1`) for no border.
+
+Returns `1` on success, `0` if no suitable `GLXFBConfig` was found or if the display depth is unsupported.
+
+<Note>
+When a non-`CLR_NONE` border is specified, LWXGL internally increases the element's bounding box by 2 pixels in each dimension (1-pixel border on each side). The OpenGL surface itself remains `w × h`; the border is drawn outside it during compositing.
+</Note>
+
+```c
+if (!CreateOpenGL(0, 0, 0, 800, 600, CLR_NONE)) {
+    fprintf(stderr, "OpenGL surface creation failed (check display depth)\n");
+    return 1;
+}
+```
+
+## Making the Context Current
+
+```c
+void ChangeGLXContext(int id);
+```
+
+Makes the GLXContext associated with element `id` current for all subsequent OpenGL calls on the calling thread. Pass `-1` to detach from any active context (equivalent to `glXMakeContextCurrent(dpy, None, None, NULL)`).
+
+```c
+ChangeGLXContext(0);    /* activate element 0's context */
+/* ... OpenGL calls ... */
+ChangeGLXContext(-1);   /* release context */
+```
+
+## Rendering
+
+After calling `ChangeGLXContext(id)`, the full OpenGL API is available — state changes, draw calls, texture uploads, and so on. At the end of each frame, call `SynchronizeOpenGL` before returning control to LWXGL:
+
+```c
+void SynchronizeOpenGL(void);
+```
+
+This calls `glFlush()` followed by `glXWaitGL()`, ensuring all pending GPU commands are flushed and the pixmap is ready for the LWXGL compositor to copy to the window back-buffer. Skipping this step can cause tearing or partial frames.
+
+## Typical Per-Frame Flow
+
+Integrate OpenGL rendering with the `on_every` callback passed to `MainWindowLoop`:
+
+```c
+void on_every(int tick, float dt) {
+    ChangeGLXContext(0);     /* activate OpenGL surface */
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    /* ... draw scene ... */
+
+    SynchronizeOpenGL();     /* flush before LWXGL composites */
+    ChangeGLXContext(-1);    /* release context */
+}
+```
+
+<Tip>
+Always release the context with `ChangeGLXContext(-1)` at the end of the callback. Leaving it current can interfere with LWXGL's internal X11 drawing operations that run after `on_every` returns.
+</Tip>
+
+## Using TGA Textures in OpenGL
+
+LWXGL can convert a previously loaded TGA image (see [TGA & XBM](/guides/tga-and-xbm)) into an OpenGL texture:
+
+```c
+unsigned int GLConvertTGA(const char *name);
+```
+
+Looks up the named TGA in the allocator cache, expands its palette to RGBA, and uploads the result as a 2D texture with `GL_NEAREST` filtering. Returns the `GLuint` texture ID on success, or `0` if:
+- No TGA with the given name exists, or
+- The TGA's palette pointer is `NULL` (e.g., it was loaded as an XBM).
+
+The active GL context **must** be current when calling `GLConvertTGA`. The texture is created with `GL_REPEAT` wrapping and `GL_NEAREST` min/mag filters. The transparent palette index (if set via `AllocateTGA`) is emitted as alpha `0` in the uploaded RGBA data.
+
+```c
+/* Load TGA from disk */
+AllocateTGA("wall", "textures/wall.tga", 0, -1);
+
+/* Convert to OpenGL texture (context must be current) */
+ChangeGLXContext(0);
+GLuint wall_tex = GLConvertTGA("wall");
+if (wall_tex == 0) {
+    fprintf(stderr, "Texture conversion failed\n");
+}
+ChangeGLXContext(-1);
+```
+
+<Note>
+The OpenGL pixmap is composited into LWXGL's back-buffer each frame automatically. All standard LWXGL elements — buttons, text, image canvases — and immediate-mode drawing functions (`ImmediateRect`, `ImmediateText`, etc.) continue to work alongside the OpenGL element. Use `SetRenderingOrder` if you need to control whether LWXGL elements appear in front of or behind the OpenGL surface.
+</Note>
+
+## Complete Example
+
+```c
+#include "libLWXGL.h"
+#include <GL/gl.h>
+
+static float hue = 0.0f;
+
+void on_every(int tick, float dt) {
+    ChangeGLXContext(0);
+
+    hue += dt * 0.5f;
+    float r = 0.5f + 0.5f * sinf(hue);
+    float g = 0.5f + 0.5f * sinf(hue + 2.094f);
+    float b = 0.5f + 0.5f * sinf(hue + 4.189f);
+
+    glClearColor(r, g, b, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    SynchronizeOpenGL();
+    ChangeGLXContext(-1);
+}
+
+int main(void) {
+    CreateWindow(800, 600, "OpenGL Demo", CLR_BLACK);
+
+    if (!CreateOpenGL(0, 0, 0, 800, 600, CLR_NONE)) {
+        fprintf(stderr, "Failed to create OpenGL surface\n");
+        return 1;
+    }
+
+    MainWindowLoop(60, on_every);
+    TerminateWindow();
+    return 0;
+}
+```

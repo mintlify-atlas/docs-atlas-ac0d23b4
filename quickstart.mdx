@@ -1,47 +1,119 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with LWXGL in C"
+sidebarTitle: "Quickstart"
+description: "Create a 400×300 LWXGL window, add a clickable button and a text label, and run the frame loop — all in under 30 lines of C."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+By the end of this guide you will have a working X11 window containing a text label and a clickable button. You will understand how to register elements by ID, attach an event callback, and run the frame loop — the three concepts that underpin every LWXGL application. No prior Xlib knowledge is required.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+## Complete Example
 
-## Prerequisites
+Save the following file as `hello.c`:
 
-Before you begin, you must have:
+```c
+#include <stdio.h>
+#include <libLWXGL.h>
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+/* Button click callback — called by LWXGL when the button is pressed */
+void on_click(void) {
+    printf("Button clicked!\n");
+}
 
-## Get started
+int main(void) {
+    /* Open a 400×300 window titled "Hello LWXGL" with a black background.
+       Returns 0 on success, non-zero on failure.                          */
+    int rc = CreateWindow(
+        400,          /* window width  in pixels */
+        300,          /* window height in pixels */
+        "Hello LWXGL",/* title bar text           */
+        CLR_BLACK     /* background palette index */
+    );
+    if (rc != 0) return rc;
 
-<Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+    /* Create a button (element ID 0).
+       Parameters: id, x, y, width, height,
+                   normal color, hover color, pressed color,
+                   label text, click callback.              */
+    CreateButton(
+        0,            /* element ID               */
+        100, 120,     /* top-left corner (x, y)   */
+        160, 30,      /* width, height in pixels  */
+        CLR_GRAY,     /* normal background color  */
+        CLR_LGRAY,    /* hover  background color  */
+        CLR_BLUE,     /* pressed background color */
+        "Click me",   /* label text               */
+        on_click      /* callback function        */
+    );
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+    /* Create a text label (element ID 1).
+       Parameters: id, x, y, text, color.  */
+    CreateText(
+        1,            /* element ID               */
+        100, 90,      /* position (x, y)          */
+        "Hello, LWXGL!", /* string to display      */
+        CLR_WHITE     /* text palette color       */
+    );
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+    /* Enter the main loop at 60 fps.
+       NULL means no per-frame callback. Blocks until window is closed. */
+    MainWindowLoop(60, NULL);
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
-</Steps>
+    /* Release all X11 resources and close the display connection */
+    TerminateWindow();
+    return 0;
+}
+```
+
+## Compile and Run
+
+```bash
+gcc hello.c -o hello -lLWXGL -lX11 -lGL
+./hello
+```
+
+A 400×300 window will appear with the text "Hello, LWXGL!" above a gray button. Clicking the button prints `Button clicked!` to stdout. Close the window to exit.
+
+## How the Loop Works
+
+`MainWindowLoop` is a **blocking** call that drives the entire application lifecycle. Internally, each iteration:
+
+1. **Processes X11 events** — mouse moves, button presses, key presses, and the window-close protocol are all dispatched here. If a mouse click lands inside a button's bounding box, the button's `onclick` callback is invoked immediately.
+2. **Calls `on_every`** (if non-NULL) — your per-frame callback receives the current tick counter (`int`) and the delta time since the last frame in seconds (`float`). This is where you would update game state, call `Immediate*` drawing functions, or modify element properties.
+3. **Renders all visible elements** onto the back-buffer pixmap in their registered order, then blits the finished frame to the visible window in one atomic operation.
+4. **Sleeps** for the remainder of the frame budget so that CPU usage scales with `target_fps` rather than spinning at 100%.
+
+The loop exits as soon as the window's close button is clicked. After `MainWindowLoop` returns, call `TerminateWindow` to free every element, release the 16 allocated Xlib colors, destroy the back-buffer pixmap, and close the display connection.
+
+<Note>
+Element IDs are global. If you call `CreateButton(0, ...)` and later `CreateText(0, ...)`, the second call overwrites element slot 0 without warning. Use distinct IDs for every element in your application.
+</Note>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+To run logic every frame — for example, to animate an element's position — pass a callback as the second argument to `MainWindowLoop`:
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+```c
+void every_frame(int tick, float dt) {
+    /* dt is the elapsed time in seconds since the previous frame */
+    ElemModifyBounds(0, 100 + tick % 80, 120, 160, 30);
+}
+
+MainWindowLoop(60, every_frame);
+```
 </Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Window Management" icon="window-maximize" href="/concepts/window">
+    Learn the full `CreateWindow` return codes, `SetWindowTitle`, `EnableResizing`, scrolling, and the modal dialog API.
+  </Card>
+  <Card title="Elements" icon="table-cells" href="/concepts/elements">
+    Explore every retained element type: buttons, inputs, images, consoles, checkboxes, OpenGL surfaces, and more.
+  </Card>
+  <Card title="Color Palette" icon="palette" href="/concepts/color-palette">
+    Understand the 16-color palette, all `CLR_*` constants, and how to customise colors at runtime with `PaletteModify`.
+  </Card>
+  <Card title="Events" icon="bolt" href="/concepts/events">
+    Attach keyboard and mouse callbacks, query real-time input state, and handle window-close events gracefully.
+  </Card>
+</CardGroup>

@@ -1,0 +1,120 @@
+---
+title: "CreateWindow, TerminateWindow, and DeleteWindow"
+sidebarTitle: "CreateWindow"
+description: "Open an X11 window with CreateWindow, close it gracefully with DeleteWindow, and release all resources with TerminateWindow."
+---
+
+Every LWXGL application begins with `CreateWindow` and ends with `TerminateWindow`. These three functions together manage the full lifetime of the X11 window: `CreateWindow` opens the display connection and allocates all required resources, `DeleteWindow` initiates a graceful close (honouring any registered callback), and `TerminateWindow` performs the final teardown once the main loop has exited.
+
+<Warning>
+`CreateWindow` must be the very first LWXGL function called. All other functions — including element creation and configuration — are undefined behavior if the window does not exist.
+</Warning>
+
+---
+
+## `CreateWindow`
+
+```c
+int CreateWindow(int w, int h, const char* name, int bgcolor);
+```
+
+Opens an X11 display connection via `XOpenDisplay`, allocates the 16-color palette from the default colormap, creates the application window and a matching back-buffer `Pixmap`, loads the default `9x15` bitmap font, and maps the window to the screen. The window is fixed-size by default (min/max size hints are set to `w × h`). The cursor is initialized to glyph **68** (the standard X11 crosshair).
+
+<ParamField path="w" type="int" required>
+  Width of the window in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the window in pixels. When scroll mode is active (see `ReserveScroll`), the back-buffer height uses the reserved virtual canvas height instead.
+</ParamField>
+
+<ParamField path="name" type="const char*" required>
+  Window title string set via `XStoreName`. The pointer only needs to be valid for the duration of the call.
+</ParamField>
+
+<ParamField path="bgcolor" type="int" required>
+  Palette index (0–15, or `CLR_*` constant) used as the background fill color when clearing the back-buffer at the start of each frame.
+</ParamField>
+
+### Return values
+
+| Value | Meaning |
+|-------|---------|
+| `0` | Success. |
+| `1` | `XOpenDisplay` failed — no X11 display available (`DISPLAY` not set or compositor not running). |
+| `2` | Default font `9x15` could not be loaded. |
+| `3` | A window already exists; `CreateWindow` is a no-op when called twice. |
+| `127 + i` | Color allocation failed for palette index `i` during `XAllocColor`. All previously allocated colors are freed before returning. |
+
+---
+
+## `TerminateWindow`
+
+```c
+void TerminateWindow(void);
+```
+
+Releases every resource that was allocated by `CreateWindow` and accumulated during the session. The teardown order is:
+
+1. Frees all live elements (calls `DeleteElement` on each non-NULL slot).
+2. Deletes all TGA allocations registered with `AllocateTGA`.
+3. Frees any active modal state message buffer.
+4. Frees the font (`XFreeFont`), GC (`XFreeGC`), back-buffer pixmap (`XFreePixmap`), and all 16 colormap entries (`XFreeColors`).
+5. Destroys the window (`XDestroyWindow`) and closes the display connection (`XCloseDisplay`).
+
+<Warning>
+Always call `TerminateWindow` after `MainWindowLoop` returns and before the process exits. Skipping it leaks X11 server-side resources for the duration of the display session.
+</Warning>
+
+---
+
+## `DeleteWindow`
+
+```c
+void DeleteWindow(void);
+```
+
+Signals the window that it should close. The exact behavior depends on whether an `EventAttachDelete` callback has been registered:
+
+- **With callback:** The registered function is called. If it returns **0**, the close is cancelled and the main loop continues running. If it returns any non-zero value, the closing flag is set.
+- **Without callback:** The closing flag is set immediately.
+
+Once the closing flag is set, `MainWindowLoop` exits after completing the current frame.
+
+<Tip>
+`DeleteWindow` is the correct way to programmatically close the window from within a button `onclick` handler or a keyboard event callback.
+</Tip>
+
+---
+
+## Complete example
+
+```c
+#include "libLWXGL.h"
+#include <stdio.h>
+
+static void on_frame(int tick, float dt) {
+    /* per-frame logic here */
+    (void)tick; (void)dt;
+}
+
+int main(void) {
+    int rc = CreateWindow(800, 600, "My LWXGL App", CLR_BLACK);
+    if (rc != 0) {
+        fprintf(stderr, "CreateWindow failed: error %d\n", rc);
+        return 1;
+    }
+
+    /* Create UI elements, register event handlers, etc. */
+
+    MainWindowLoop(60, on_frame);
+
+    /* MainWindowLoop has returned — the window is closing */
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Note>
+`DeleteWindow` is called internally by the X11 `WM_DELETE_WINDOW` protocol handler when the user clicks the window's close button, so you do not need to call it yourself to handle normal close events.
+</Note>

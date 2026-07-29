@@ -1,0 +1,228 @@
+---
+title: "Image Elements: Canvas, Font Rendering, and Pixel Transforms"
+sidebarTitle: "Image"
+description: "Create a palette-indexed image canvas, write pixel data, draw TGA and XBM images, set a bitmap font, and apply per-pixel transform functions."
+---
+
+An image element is a general-purpose pixel canvas that lives in the LWXGL element list. Each image is backed by a flat array of palette indices (one byte per pixel, values 0–15) and a corresponding `XPixmap`. You write pixel data by modifying the array returned by `GetImageData`, then call `UpdateImage` to push changes to the GPU-side pixmap. Only pixels that differ from the previous uploaded frame are retransferred, keeping updates efficient even for large canvases.
+
+Image elements also support an optional bitmap font engine — install a font with `SetImageFont` and draw multi-line text directly into the pixel buffer with `DrawString`, independent of the global X11 font.
+
+---
+
+## `CreateImage`
+
+```c
+void CreateImage(int id, int x, int y, int w, int h);
+```
+
+Allocates a new image element. LWXGL creates an `XImage`, a pixel data buffer, a previous-frame shadow buffer (used for dirty-region detection), and an `XPixmap` of the same dimensions. All buffers are zero-initialized (palette index 0, i.e. black).
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the image's top-left corner within the window, in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the image's top-left corner within the window, in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width in pixels. If `w <= 0`, the actual width is computed as `(back_buffer_width - x + w)`, which lets you express "fill to the right edge minus an optional margin". For example, `w = 0` fills exactly to the right edge of the back-buffer.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height in pixels. The same edge-relative rule applies: if `h <= 0`, the height is `(back_buffer_height - y + h)`.
+</ParamField>
+
+---
+
+## `GetImageData`
+
+```c
+unsigned char* GetImageData(int id);
+```
+
+Returns a pointer to the image's flat pixel array. The array is `width × height` bytes stored in row-major order: pixel at `(px, py)` is at `data[py * width + px]`. Each byte is a palette index in the range 0–15.
+
+<ParamField path="id" type="int" required>
+  ID of an existing image element.
+</ParamField>
+
+Write to this buffer to change pixel colors, then call `UpdateImage` to commit the changes.
+
+<Warning>
+Do not `free()` the returned pointer. The buffer is owned by the image element and released by `DeleteElement`.
+</Warning>
+
+---
+
+## `UpdateImage`
+
+```c
+void UpdateImage(int id);
+```
+
+Scans the pixel buffer for bytes that differ from the previous uploaded frame and writes changed pixels into the `XImage`, then calls `XPutImage` to upload the updated `XImage` to the element's `XPixmap`. If no pixels changed, no Xlib calls are made.
+
+<ParamField path="id" type="int" required>
+  ID of the image element to synchronize.
+</ParamField>
+
+<Tip>
+Call `UpdateImage` once after a batch of pixel writes — do not call it after every individual pixel. For bulk fills, use `ClearImage` which operates on the data buffer directly without an immediate upload.
+</Tip>
+
+---
+
+## `ClearImage`
+
+```c
+void ClearImage(int id, int c);
+```
+
+Fills the entire pixel data buffer with the palette index `c` using `memset`. Does **not** call `UpdateImage` — you must call `UpdateImage` afterwards to make the clear visible on screen.
+
+<ParamField path="id" type="int" required>
+  ID of the image element to clear.
+</ParamField>
+
+<ParamField path="c" type="int" required>
+  Palette index (0–15) to fill every pixel with. Use `CLR_BLACK` (`0`) to zero out the buffer.
+</ParamField>
+
+---
+
+## `SetImageFont`
+
+```c
+void SetImageFont(int id, unsigned char* font, int h);
+```
+
+Installs a bitmap font into the image element for use with `DrawString`. The font data is copied internally, so the `font` pointer can be freed after this call returns.
+
+<ParamField path="id" type="int" required>
+  ID of the image element.
+</ParamField>
+
+<ParamField path="font" type="unsigned char*" required>
+  Pointer to the font bitmap data. The buffer must be exactly `256 * h` bytes. The layout is one entry per ASCII character code (0–255), each entry being `h` bytes. Each byte is a column-major row bitmap: bit 7 (MSB) is the leftmost pixel, covering 8 pixels wide per row.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of a single character in pixels (number of rows per glyph). Each character is implicitly 8 pixels wide (one byte per row), but `DrawString` advances the cursor by 9 pixels horizontally to add one pixel of spacing between characters.
+</ParamField>
+
+---
+
+## `DrawString`
+
+```c
+void DrawString(int id, int x, int y, const char* txt, int color);
+```
+
+Renders a null-terminated string into the image's pixel buffer using the bitmap font installed by `SetImageFont`. Pixels that fall outside the image bounds are clipped silently. The background is not cleared — only set pixels are written.
+
+<ParamField path="id" type="int" required>
+  ID of the image element. Must have a font installed via `SetImageFont`.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate (in image-local pixels) of the top-left of the first character.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate (in image-local pixels) of the top of the first character row.
+</ParamField>
+
+<ParamField path="txt" type="const char*" required>
+  Null-terminated string to render. Newline characters (`'\n'`, ASCII 10) advance `y` by `font_height` and reset `x` to the original starting column.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) used for every set pixel of the rendered glyphs.
+</ParamField>
+
+---
+
+## `ApplyPixelFunc`
+
+```c
+void ApplyPixelFunc(int id, int (*f)(int x, int y, int color));
+```
+
+Iterates over every pixel in the image and replaces its palette index with `f(px, py, current_index) % 16`. The function is called in row-major order. After this call you must call `UpdateImage` to push the results to the pixmap.
+
+<ParamField path="id" type="int" required>
+  ID of the image element.
+</ParamField>
+
+<ParamField path="f" type="int (*)(int x, int y, int color)" required>
+  Transform function. Receives the pixel's column (`x`), row (`y`), and current palette index (`color`). The return value modulo 16 becomes the new palette index.
+</ParamField>
+
+---
+
+## `RedrawAllImages`
+
+```c
+void RedrawAllImages(void);
+```
+
+Forces every image element in the element list to be fully re-uploaded on the next `UpdateImage` call by resetting all shadow (previous-frame) buffer bytes to 255 (an invalid palette index), ensuring the dirty-detection logic marks every pixel as changed. This is necessary after calling `PaletteModify` to make color changes visible in already-uploaded image content.
+
+<Note>
+`RedrawAllImages` is called automatically by `PaletteModify` when its `redraw` parameter is non-zero.
+</Note>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <math.h>
+
+#define ID_CANVAS 0
+
+/* Invert palette index: maps 0→15, 1→14, …, 15→0 */
+static int invert(int x, int y, int c) {
+    (void)x; (void)y;
+    return 15 - c;
+}
+
+static void on_frame(int tick, float dt) {
+    (void)dt;
+
+    unsigned char* px = GetImageData(ID_CANVAS);
+    int w = 320, h = 240;
+
+    /* Draw a moving sine wave */
+    ClearImage(ID_CANVAS, CLR_BLACK);
+    for (int x = 0; x < w; x++) {
+        int y = (int)(h / 2 + sin((x + tick) * 0.05) * 60);
+        if (y >= 0 && y < h) px[y * w + x] = CLR_LGREEN;
+    }
+
+    /* Every 120 frames, invert all pixels for one frame */
+    if (tick % 120 == 0) {
+        ApplyPixelFunc(ID_CANVAS, invert);
+    }
+
+    UpdateImage(ID_CANVAS);
+}
+
+int main(void) {
+    if (CreateWindow(320, 240, "Image Demo", CLR_BLACK) != 0) return 1;
+
+    /* Fill to full window size */
+    CreateImage(ID_CANVAS, 0, 0, 320, 240);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

@@ -1,0 +1,181 @@
+---
+title: "Rectangles, Ellipses, and Checkboxes"
+sidebarTitle: "Rect, Ellipse, Checkbox"
+description: "Create filled rectangle, ellipse, and checkbox elements as retained UI components with palette-indexed foreground and background colors."
+---
+
+Rectangles, ellipses, and checkboxes are lightweight geometric UI elements. Rectangles and ellipses serve as structural and decorative shapes — borders, panels, and indicators. Checkboxes provide a familiar toggleable boolean control with an optional text label. All three accept separate foreground (border) and background (fill) color parameters; passing `CLR_NONE` (`-1`) for either omits that rendering layer entirely.
+
+---
+
+## `CreateRect`
+
+```c
+void CreateRect(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Creates a filled rectangle element. The foreground color is applied to the border (outline) and the background color fills the interior. Passing `CLR_NONE` for `fg` renders a filled rectangle with no visible border; passing `CLR_NONE` for `bg` renders only the border outline.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the top-left corner in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border color — palette index (0–15), `CLR_*` constant, or `CLR_NONE` (`-1`) to omit the border.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color — palette index (0–15), `CLR_*` constant, or `CLR_NONE` (`-1`) to omit the fill (border-only mode).
+</ParamField>
+
+---
+
+## `CreateEllipse`
+
+```c
+void CreateEllipse(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+Creates an ellipse element inscribed within the bounding box defined by `(x, y, w, h)`. As with `CreateRect`, `fg` paints the border and `bg` fills the interior; either may be `CLR_NONE` to suppress that layer.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the bounding box's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the bounding box's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the bounding box in pixels. The ellipse's horizontal diameter equals `w`.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the bounding box in pixels. The ellipse's vertical diameter equals `h`. Pass equal `w` and `h` for a circle.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Border color — palette index (0–15), `CLR_*` constant, or `CLR_NONE` to omit the border.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Fill color — palette index (0–15), `CLR_*` constant, or `CLR_NONE` to omit the fill.
+</ParamField>
+
+---
+
+## `CreateCheckbox`
+
+```c
+void CreateCheckbox(int id, int x, int y, int size, int cb_col, int txt_col, const char* label);
+```
+
+Creates a checkbox element consisting of a square box and a text label to its right. Clicking anywhere within the element's bounding box toggles the checked state. The element's bounding box is `size × size` pixels; the label extends beyond it visually but hit-testing uses only the box region.
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the checkbox square's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the checkbox square's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="size" type="int" required>
+  Side length of the checkbox square in pixels. Both the element width and height are set to this value.
+</ParamField>
+
+<ParamField path="cb_col" type="int" required>
+  Palette index for the checkmark glyph and the box border.
+</ParamField>
+
+<ParamField path="txt_col" type="int" required>
+  Palette index for the label text rendered to the right of the box.
+</ParamField>
+
+<ParamField path="label" type="const char*" required>
+  Null-terminated label string. The pointer is stored directly (not copied) and must remain valid for the element's lifetime.
+</ParamField>
+
+---
+
+## `GetCheckbox`
+
+```c
+int GetCheckbox(int id);
+```
+
+Returns the current checked state of a checkbox element.
+
+<ParamField path="id" type="int" required>
+  ID of an existing checkbox element.
+</ParamField>
+
+**Returns** `1` if the checkbox is checked, `0` if unchecked.
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+
+#define ID_PANEL     0
+#define ID_INDICATOR 1
+#define ID_CHECKBOX  2
+
+static void on_frame(int tick, float dt) {
+    (void)tick; (void)dt;
+
+    /* Change indicator color based on checkbox state */
+    int checked = GetCheckbox(ID_CHECKBOX);
+    DeleteElement(ID_INDICATOR);
+    CreateEllipse(ID_INDICATOR, 160, 50, 40, 40,
+                  CLR_NONE,
+                  checked ? CLR_LGREEN : CLR_RED);
+}
+
+int main(void) {
+    if (CreateWindow(300, 180, "Shape Demo", CLR_BLACK) != 0) return 1;
+
+    /* Background panel */
+    CreateRect(ID_PANEL, 10, 10, 280, 100, CLR_GRAY, CLR_LGRAY);
+
+    /* Circular indicator, initially red */
+    CreateEllipse(ID_INDICATOR, 160, 50, 40, 40, CLR_NONE, CLR_RED);
+
+    /* Checkbox to toggle the indicator */
+    CreateCheckbox(ID_CHECKBOX, 20, 50, 16, CLR_WHITE, CLR_WHITE, "Enable");
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+To use a rectangle as a divider or rule, set `h` to `1` (or `w` to `1` for a vertical rule) with `bg` as `CLR_NONE` and a foreground color for the border.
+</Tip>

@@ -1,0 +1,181 @@
+---
+title: "Modal Dialogs and Scrollable Canvases"
+sidebarTitle: "Modals & Scroll"
+description: "Spawn alert, confirm, and input modal dialogs, and configure a virtual scrollable canvas taller than the window using ReserveScroll."
+---
+
+LWXGL provides built-in modal dialogs for common interactions — alerts, confirmations, and text prompts — as well as a virtual scroll canvas that lets your UI extend beyond the visible window height. Both features integrate seamlessly with the main render loop without requiring any manual overlay management.
+
+## Modal Dialogs
+
+Spawn a modal dialog with:
+
+```c
+void SpawnModal(int type, const char *message, void (*on_confirm)(const char *input));
+```
+
+The `type` parameter selects the dialog style. `message` is the text displayed in the dialog body. `on_confirm` is a callback invoked when the user clicks OK — its argument depends on the modal type.
+
+| Constant | Value | Behavior |
+|----------|-------|----------|
+| `MODAL_ALERT` | `0` | Displays the message with a single **OK** button. `on_confirm` is called with `NULL`. |
+| `MODAL_CONFIRM` | `1` | Displays **Cancel** and **OK** buttons. `on_confirm` is called with `NULL` when OK is clicked; cancel dismisses without calling the callback. |
+| `MODAL_INPUT` | `2` | Displays a text input field with **Cancel** and **OK** buttons. `on_confirm` is called with the entered string (up to 150 characters) when OK is clicked. |
+
+**Alert modal:**
+
+```c
+void on_ok(const char *input) {
+    /* input is NULL for MODAL_ALERT */
+    printf("User acknowledged the alert.\n");
+}
+
+SpawnModal(MODAL_ALERT, "Operation completed successfully.", on_ok);
+```
+
+**Confirm modal:**
+
+```c
+void on_confirm(const char *input) {
+    /* input is NULL for MODAL_CONFIRM */
+    printf("User confirmed the action.\n");
+}
+
+SpawnModal(MODAL_CONFIRM, "Are you sure you want to delete this file?", on_confirm);
+```
+
+**Input modal:**
+
+```c
+void on_input(const char *input) {
+    if (input != NULL) {
+        printf("User entered: %s\n", input);
+    }
+}
+
+SpawnModal(MODAL_INPUT, "Enter your name:", on_input);
+```
+
+<Note>
+Only one modal can be active at a time. Calling `SpawnModal` while a modal is already open replaces the current message but keeps the same active state.
+</Note>
+
+## Checking If a Modal Is Open
+
+```c
+int QueryModalOpen(void);
+```
+
+Returns `1` if a modal dialog is currently displayed, `0` otherwise. While a modal is open, all element interaction callbacks (button clicks, key events, etc.) and user event handlers are suppressed — only the modal itself receives input. You can use `QueryModalOpen` in your `on_every` callback to pause game logic or animations while waiting for user input.
+
+```c
+void on_frame(int tick, float dt) {
+    if (QueryModalOpen()) return;  /* pause while dialog is open */
+    /* ... normal per-frame logic ... */
+}
+```
+
+## Scrollable Canvas
+
+`ReserveScroll` configures a virtual canvas that is taller than the physical window, enabling the user to scroll through content with the mouse wheel:
+
+```c
+void ReserveScroll(int virtual_height, int scrollbar_color, void (*Scroll)(int offset));
+```
+
+- **`virtual_height`** — the total height of the back-buffer in pixels. This must be larger than the window height for scrolling to have any effect.
+- **`scrollbar_color`** — a palette index for the scrollbar handle. Pass `CLR_NONE` (`-1`) to hide the scrollbar visually while still allowing scroll.
+- **`Scroll`** — a `void callback(int offset)` called whenever the scroll position changes. `offset` is the new scroll position in pixels from the top.
+
+To read the current scroll position at any time:
+
+```c
+int QueryScroll(void);
+```
+
+Returns the current scroll offset in pixels.
+
+<Warning>
+`ReserveScroll` must be called **before** `CreateWindow`. Calling it after the window has been created has no effect — the back-buffer dimensions are fixed at window creation time.
+</Warning>
+
+```c
+void on_scroll(int offset) {
+    printf("Scrolled to pixel offset: %d\n", offset);
+}
+
+int main(void) {
+    /* Configure scroll BEFORE CreateWindow */
+    ReserveScroll(1200, CLR_LGRAY, on_scroll);
+    CreateWindow(640, 480, "Scrollable Demo", CLR_BLACK);
+    /* ... create elements and enter loop ... */
+}
+```
+
+## Anchoring Elements in Scroll Mode
+
+When scrolling is active, all elements move with the virtual canvas by default — their `y` coordinates are interpreted relative to the top of the virtual canvas, not the visible viewport. To pin specific elements to the viewport (such as a fixed toolbar or status bar that should always remain visible), use `ElemAnchor` and `ResolveAnchors`.
+
+Call `ElemAnchor` once to register which elements should be viewport-pinned:
+
+```c
+int pinned[] = { TOOLBAR_ID, STATUS_ID };
+ElemAnchor(1, pinned, 2);   /* anchor = current y, treated as viewport offset */
+```
+
+Then call `ResolveAnchors` each frame (typically at the start of your `on_every` callback) to recompute the absolute `y` position of anchored elements from the current scroll offset:
+
+```c
+void on_frame(int tick, float dt) {
+    ResolveAnchors();   /* reposition anchored elements */
+    /* ... rest of frame logic ... */
+}
+```
+
+<Tip>
+Pass `anchor = 0` to `ElemAnchor` to un-anchor previously pinned elements, restoring their position to their original canvas-relative coordinates.
+</Tip>
+
+## Complete Example
+
+The following example sets up a 1200-pixel virtual canvas, adds a scroll callback, and keeps a header image pinned to the top of the viewport.
+
+```c
+#include "libLWXGL.h"
+
+#define HEADER_ID  0
+#define CONTENT_ID 1
+
+void on_scroll(int offset) {
+    printf("scroll offset: %d px\n", offset);
+}
+
+void on_frame(int tick, float dt) {
+    /* Re-pin the header to the top of the visible viewport each frame */
+    ResolveAnchors();
+    (void)tick; (void)dt;
+}
+
+int main(void) {
+    /* 1200-pixel virtual canvas, gray scrollbar */
+    ReserveScroll(1200, CLR_LGRAY, on_scroll);
+    CreateWindow(640, 480, "Scroll Demo", CLR_BLACK);
+
+    /* Fixed header pinned to viewport top */
+    CreateImage(HEADER_ID, 0, 0, 640, 40);
+    PrimitiveRect(HEADER_ID, 0, 0, 640, 40, CLR_NONE, CLR_BLUE);
+    UpdateImage(HEADER_ID);
+
+    int header_ids[] = { HEADER_ID };
+    ElemAnchor(1, header_ids, 1);   /* pin header */
+
+    /* Tall content canvas placed below the header */
+    CreateImage(CONTENT_ID, 0, 40, 640, 1160);
+    /* ... populate content ... */
+    UpdateImage(CONTENT_ID);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```

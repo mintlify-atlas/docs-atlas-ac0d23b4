@@ -1,0 +1,131 @@
+---
+title: "Element System: IDs, Types, and Lifecycle"
+sidebarTitle: "Elements"
+description: "LWXGL uses a retained-mode element system where each UI component is assigned a developer-chosen integer ID that persists for the window's lifetime."
+---
+
+Every visual component in LWXGL — text labels, buttons, input fields, images, checkboxes, consoles, shapes, and OpenGL surfaces — is a **retained element**. You create an element once, assign it an integer ID of your choosing, and the library keeps it alive and redraws it automatically each frame until you explicitly delete it. There is no need to issue draw calls every frame for retained elements; simply update their state and the renderer handles the rest.
+
+## Element IDs
+
+IDs are arbitrary non-negative integers that you supply at element creation time. Internally, the element system uses a `std::vector` indexed by ID, so the vector grows to accommodate the largest ID you use. A few practical notes:
+
+- IDs **do not need to be contiguous**. You can use IDs 0, 5, and 100 without any penalty other than the vector capacity growing to 101 entries.
+- Once you call `DeleteElement(id)`, that slot is set to `NULL` and can be reused by creating a new element with the same ID.
+- It is your responsibility to avoid creating two elements with the same ID before deleting the first — doing so will silently overwrite the slot, leaking the previous element's memory.
+
+```c
+// Assign meaningful IDs using your own constants
+#define ID_TITLE   0
+#define ID_BTN_OK  1
+#define ID_INPUT   2
+
+CreateText(ID_TITLE, 20, 20, "Enter your name:", CLR_WHITE);
+CreateInput(ID_INPUT, 20, 40, 200, 20, CLR_GRAY, CLR_LGRAY, 32);
+CreateButton(ID_BTN_OK, 20, 70, 80, 25, CLR_BLUE, CLR_LBLUE, CLR_CYAN, "OK", on_ok);
+```
+
+## Element Types
+
+LWXGL supports nine element types, each with a dedicated creation function:
+
+| Type ID | Name | Creation Function |
+|---------|------|-------------------|
+| 0 | Text | `CreateText(id, x, y, text, color)` |
+| 1 | Button | `CreateButton(id, x, y, w, h, u, hvr, p, label, onclick)` |
+| 2 | Input | `CreateInput(id, x, y, w, h, u, hvr, max)` |
+| 3 | Rect | `CreateRect(id, x, y, w, h, fg, bg)` |
+| 4 | Image | `CreateImage(id, x, y, w, h)` |
+| 5 | Checkbox | `CreateCheckbox(id, x, y, size, cb_col, txt_col, label)` |
+| 6 | Console | `CreateConsole(id, x, y, cols, rows, con_clr, txt_clr)` |
+| 7 | Ellipse | `CreateEllipse(id, x, y, w, h, fg, bg)` |
+| 8 | OpenGL | `CreateOpenGL(id, x, y, w, h, border)` |
+
+Color parameters (`u`, `hvr`, `p`, `fg`, `bg`, `color`, etc.) all take a palette index (0–15) or `CLR_NONE` (`-1`) for no color. See the [Color Palette](/concepts/color-palette) page for details.
+
+## Element Bounds
+
+Every element stores an `(x, y, w, h)` bounding rectangle. You can read these at creation time and modify them at any point during the window's lifetime using `ElemModifyBounds`:
+
+```c
+// Move and resize a button at runtime
+ElemModifyBounds(ID_BTN_OK, 50, 100, 120, 30);
+
+// Move without changing size — pass -1 for w and h
+ElemModifyBounds(ID_TITLE, 20, 200, -1, -1);
+```
+
+Pass `-1` for `w` or `h` to leave that dimension unchanged. Passing `-1` for `x` or `y` sets the position to -1 literally, so always supply valid coordinates for position.
+
+## Visibility
+
+Elements can be hidden and shown without being destroyed. This is useful for toggling panels, dialogs, or indicators without paying the cost of re-creation:
+
+```c
+ElemSetVisible(ID_BTN_OK, 0); // Hide — element is retained but not drawn or hit-tested
+ElemSetVisible(ID_BTN_OK, 1); // Show again
+```
+
+Hidden elements are skipped entirely during rendering and event dispatch.
+
+## Hit-Testing
+
+`ElemInside` returns `1` if the mouse cursor currently lies within the element's bounding box, or `0` otherwise. Call it inside your `on_every` callback or event handlers to implement custom hover logic:
+
+```c
+void on_every(int tick, float dt) {
+    if (ElemInside(ID_TITLE)) {
+        // Mouse is hovering over the title label
+    }
+}
+```
+
+Hit-testing uses the element's current `(x, y, w, h)` bounds, so it respects any modifications made with `ElemModifyBounds`.
+
+## Anchoring (Scroll Mode)
+
+When scroll mode is active (enabled via `ReserveScroll` before `CreateWindow`), the virtual canvas is taller than the physical window. Use `ElemAnchor` to pin a set of elements so they stay fixed relative to the current scroll position, rather than scrolling with the canvas:
+
+```c
+int hud_ids[] = {ID_BTN_OK, ID_TITLE};
+
+// Anchor elements at offset 10 from the current scroll position
+ElemAnchor(10, hud_ids, 2);
+```
+
+Call `ResolveAnchors()` each frame (inside `on_every`) to recalculate the screen position of all anchored elements based on the current scroll offset:
+
+```c
+void on_every(int tick, float dt) {
+    ResolveAnchors();
+    // ... rest of per-frame logic
+}
+```
+
+To un-anchor elements, call `ElemAnchor(0, ids, count)` — this resets their anchor and restores their `y` position to the anchor value that was stored.
+
+## Deletion
+
+`DeleteElement(id)` frees all memory owned by the element and sets its slot to `NULL`:
+
+```c
+DeleteElement(ID_BTN_OK);
+```
+
+Depending on the element type, this may also free associated resources — for example, type 4 (Image) destroys the `XImage`, frees pixel data buffers, and frees the element's `Pixmap`. All elements are automatically deleted by `TerminateWindow`.
+
+## Rendering Order
+
+By default, elements are drawn to the back-buffer **before** the `on_every` callback runs (`ORDER_ELEM_FIRST`). This means anything you draw inside `on_every` using immediate-mode functions appears on top of retained elements.
+
+Call `SetRenderingOrder` to swap the order:
+
+```c
+// Elements render first, then on_every draws on top (default)
+SetRenderingOrder(ORDER_ELEM_FIRST);   // ORDER_ELEM_FIRST = 1
+
+// on_every callback runs first, then elements render on top
+SetRenderingOrder(ORDER_ELEM_SECOND);  // ORDER_ELEM_SECOND = 0
+```
+
+The constants are defined in `libLWXGL.h` as `ORDER_ELEM_FIRST = 1` and `ORDER_ELEM_SECOND = 0`.

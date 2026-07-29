@@ -1,0 +1,193 @@
+---
+title: "Element Management: Bounds, Visibility, Anchors, and Deletion"
+sidebarTitle: "Element Management"
+description: "Modify element bounds and visibility at runtime, pin elements with anchors for scroll mode, check hit-testing, control render order, and delete elements."
+---
+
+Once elements are created they can be repositioned, resized, hidden, and destroyed at any time. In scroll mode, the anchor system lets you pin elements to the visible viewport so they remain stationary as the user scrolls. The rendering order control determines whether the `on_every` frame callback fires before or after elements are drawn — giving you full flexibility over compositing.
+
+---
+
+## `ElemModifyBounds`
+
+```c
+void ElemModifyBounds(int id, int x, int y, int w, int h);
+```
+
+Updates the position and optionally the size of an existing element. The change takes effect on the next rendered frame.
+
+<ParamField path="id" type="int" required>
+  ID of the element to modify.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  New X coordinate of the element's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  New Y coordinate of the element's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  New width in pixels. Pass `-1` to leave the current width unchanged.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  New height in pixels. Pass `-1` to leave the current height unchanged.
+</ParamField>
+
+---
+
+## `ElemSetVisible`
+
+```c
+void ElemSetVisible(int id, int visible);
+```
+
+Controls whether an element is rendered and participates in event handling.
+
+<ParamField path="id" type="int" required>
+  ID of the element.
+</ParamField>
+
+<ParamField path="visible" type="int" required>
+  Pass `1` to make the element visible and interactive. Pass `0` to hide it — hidden elements are neither rendered nor considered for mouse hit-testing.
+</ParamField>
+
+---
+
+## `ElemInside`
+
+```c
+int ElemInside(int id);
+```
+
+Tests whether the mouse cursor is currently within the element's bounding box. Useful for implementing custom hover effects or conditional interactions outside of the built-in button and input mechanics.
+
+<ParamField path="id" type="int" required>
+  ID of the element to test.
+</ParamField>
+
+**Returns** `1` if the cursor is inside the bounding box, `0` otherwise.
+
+---
+
+## `ElemAnchor`
+
+```c
+void ElemAnchor(int anchor, int ids[], int count);
+```
+
+Manages the anchor state for a set of elements. Anchoring is used in scroll mode to keep elements pinned to the visible viewport (e.g. toolbars or headers that should not scroll away).
+
+<ParamField path="anchor" type="int" required>
+  Pass a **non-zero** value to enable anchoring: each element's current `y` position is saved as its anchor offset relative to the scroll origin. Pass `0` to release anchoring: each element's `y` is restored to its saved anchor value and the anchor is cleared.
+</ParamField>
+
+<ParamField path="ids" type="int[]" required>
+  Array of element IDs to anchor or release.
+</ParamField>
+
+<ParamField path="count" type="int" required>
+  Number of entries in the `ids` array.
+</ParamField>
+
+<Note>
+Anchoring only takes effect visually when `ResolveAnchors` is called each frame. Call `ElemAnchor` once to register the anchored set, then call `ResolveAnchors` inside your `on_every` callback every frame.
+</Note>
+
+---
+
+## `ResolveAnchors`
+
+```c
+void ResolveAnchors(void);
+```
+
+Updates the `y` coordinate of every anchored element to `scroll_offset + anchor_offset`, keeping each element visually pinned to the same position in the viewport regardless of the current scroll position. Call this once per frame, typically at the start of the `on_every` callback.
+
+<Note>
+Elements without an active anchor (anchor value equals `INT_MIN` internally) are skipped silently, so it is safe to call `ResolveAnchors` even when no elements are anchored.
+</Note>
+
+---
+
+## `DeleteElement`
+
+```c
+void DeleteElement(int index);
+```
+
+Frees all memory associated with the element at `index` and sets the slot to `NULL`. For image elements this includes destroying the `XImage`, `XPixmap`, and both pixel buffers. For text elements created with `CreateCopiedText`, the duplicated string is freed. The ID can be reused for a new element after deletion.
+
+<ParamField path="index" type="int" required>
+  ID of the element to delete. If `index` is out of range or the slot is already `NULL`, the function returns immediately without error.
+</ParamField>
+
+---
+
+## `SetRenderingOrder`
+
+```c
+void SetRenderingOrder(int order);
+```
+
+Controls whether the `on_every` callback in `MainWindowLoop` fires before or after the element rendering pass.
+
+<ParamField path="order" type="int" required>
+  - `ORDER_ELEM_FIRST` (`1`) — elements are rendered to the back-buffer **before** `on_every` is called. Use this when the callback uses `ImmediateRect`, `ImmediateText`, or other immediate-mode drawing functions that should appear on top of retained elements.
+  - `ORDER_ELEM_SECOND` (`0`, default) — `on_every` is called **before** elements are rendered. Use this when you want to update element positions or data based on the new frame's logic before they appear on screen.
+</ParamField>
+
+---
+
+## Scroll anchoring example
+
+```c
+#include "libLWXGL.h"
+
+#define ID_HEADER    0
+#define ID_CONTENT_A 1
+#define ID_CONTENT_B 2
+#define ID_CONTENT_C 3
+
+static void on_scroll(int offset) {
+    (void)offset;
+    /* ResolveAnchors in on_frame keeps the header pinned */
+}
+
+static void on_frame(int tick, float dt) {
+    (void)tick; (void)dt;
+
+    /* Re-apply anchor offsets every frame so the header tracks the viewport */
+    ResolveAnchors();
+}
+
+int main(void) {
+    /* 2000-pixel tall virtual canvas */
+    ReserveScroll(2000, CLR_LGRAY, on_scroll);
+
+    if (CreateWindow(600, 400, "Anchored Header Demo", CLR_BLACK) != 0) return 1;
+
+    /* Header rect — will be anchored to the viewport */
+    CreateRect(ID_HEADER, 0, 0, 600, 30, CLR_NONE, CLR_BLUE);
+    CreateText(99, 10, 8, "My Application", CLR_WHITE);
+
+    /* Scrollable content items at various y positions */
+    CreateRect(ID_CONTENT_A, 10, 50,  580, 60, CLR_GRAY, CLR_LGRAY);
+    CreateRect(ID_CONTENT_B, 10, 130, 580, 60, CLR_GRAY, CLR_LGRAY);
+    CreateRect(ID_CONTENT_C, 10, 210, 580, 60, CLR_GRAY, CLR_LGRAY);
+
+    /* Anchor the header (and label) so they don't scroll */
+    int header_ids[] = { ID_HEADER, 99 };
+    ElemAnchor(1, header_ids, 2);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+When releasing an anchor with `ElemAnchor(0, ids, count)`, the element's `y` is restored to the value it had when it was first anchored — not the current scroll-adjusted position. If you want to keep the element at its current visual position after releasing, call `ElemModifyBounds` with the desired coordinate before releasing the anchor.
+</Tip>

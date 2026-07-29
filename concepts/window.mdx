@@ -1,0 +1,119 @@
+---
+title: "Window Lifecycle and the Render Loop"
+sidebarTitle: "Window"
+description: "Learn how LWXGL creates and manages an X11 window, the double-buffered back-buffer pixmap, and how MainWindowLoop drives rendering and events each frame."
+---
+
+In LWXGL, a **window** is the top-level X11 surface your application renders into. LWXGL follows a single-window-per-process model — only one window may exist at a time. The library manages the X11 display connection, graphics context, color allocation, font loading, and back-buffer pixmap internally, so you interact with a straightforward C API rather than raw Xlib.
+
+## Creating a Window
+
+Call `CreateWindow` to open a window with a given pixel size, title, and background color index:
+
+```c
+int result = CreateWindow(800, 600, "My App", CLR_BLACK);
+```
+
+The function returns an integer status code:
+
+| Return Value | Meaning |
+|---|---|
+| `0` | Success — the window is open and ready |
+| `1` | `XOpenDisplay` failed — no X server is reachable |
+| `2` | Font load failed — the built-in `9x15` bitmap font could not be loaded |
+| `3` | A window already exists in this process |
+| `127 + i` | Color allocation failed for palette entry `i` (0–15) |
+
+When `CreateWindow` returns `0`, the X11 window is mapped, the back-buffer pixmap is allocated, and the window's WM size hints are set to fix its dimensions. The default cursor (X cursor font glyph 68) is applied automatically.
+
+```c
+#include "libLWXGL.h"
+
+int main(void) {
+    if (CreateWindow(1024, 768, "Hello LWXGL", CLR_WHITE) != 0) {
+        return 1;
+    }
+    // ... register callbacks, create elements ...
+    MainWindowLoop(60, on_every);
+    TerminateWindow();
+    return 0;
+}
+```
+
+## The Double-Buffered Back-Buffer
+
+LWXGL maintains an off-screen X11 `Pixmap` called the **back-buffer** (`bb`) that is the same size as the window (or taller when scroll mode is enabled). Every drawing operation — element rendering, immediate-mode calls, and the debug overlay — targets the back-buffer. At the end of each frame the completed pixmap is copied to the visible window in a single `XCopyArea` call, preventing flickering.
+
+When scroll mode is active (see `ReserveScroll`), the back-buffer height is set to the virtual scroll height rather than the physical window height. The back-buffer is recreated automatically whenever the window is resized. You do not need to manage the pixmap directly.
+
+## `MainWindowLoop`
+
+`MainWindowLoop` is LWXGL's frame driver. It blocks until the window is closed, executing the following work on every frame tick:
+
+1. **Drain the X11 event queue** — all pending `XEvent`s are dispatched to built-in and user-registered handlers.
+2. **Call `on_every(tick, delta_time)`** — your per-frame callback, where `tick` is an incrementing `unsigned long long` frame counter (starting at 0) and `delta_time` is a `float` representing elapsed seconds since the previous frame.
+3. **Render all visible elements** to the back-buffer, then blit the back-buffer to the window.
+4. **Run queued tasks** — any tasks scheduled with `NewQueuedTask` whose target time has been reached are executed.
+5. **Sleep** the remainder of the frame budget so that the loop runs at approximately `target_fps` frames per second.
+
+```c
+void on_every(int tick, float dt) {
+    // Called once per frame. tick is the frame number,
+    // dt is seconds elapsed since the previous frame.
+    if (tick == 0) {
+        // First frame setup
+    }
+}
+
+// Run at 60 fps
+MainWindowLoop(60, on_every);
+```
+
+<Note>
+The `on_every` callback signature uses `int tick` in the public C header, but internally the tick counter is `unsigned long long`. For practical purposes the `int` type is sufficient unless you need extremely long-running sessions.
+</Note>
+
+The rendering order of elements relative to the `on_every` callback can be changed with `SetRenderingOrder`. By default, elements are rendered first (`ORDER_ELEM_FIRST`).
+
+## Closing and Cleanup
+
+There are two distinct concepts: **requesting a close** and **freeing resources**.
+
+`DeleteWindow()` signals that the window should close. If a delete callback was registered with `EventAttachDelete`, that function is called and its return value decides whether the close proceeds (return `1` to close, return `0` to cancel). If no callback is registered, the window closes immediately.
+
+```c
+// Programmatically request a close:
+DeleteWindow();
+```
+
+`TerminateWindow()` performs the actual resource teardown. It must be called **after** `MainWindowLoop` returns:
+
+- Frees all elements (calling `DeleteElement` on each non-null slot)
+- Frees all allocated TGA image assets
+- Frees any active modal state
+- Releases the X11 font, GC, back-buffer pixmap, and all 16 palette colors
+- Destroys the X11 window and closes the display connection
+
+```c
+MainWindowLoop(60, on_every);
+TerminateWindow(); // Always call this after the loop exits
+```
+
+<Note>
+`TerminateWindow()` must be called after `MainWindowLoop` returns to free all resources. Do not call it before the loop exits — doing so while the loop is still running will leave dangling pointers and result in undefined behaviour.
+</Note>
+
+## Resizable Windows
+
+By default, `CreateWindow` locks the window to the requested dimensions by setting both the minimum and maximum WM size hints to `(w, h)`. To allow the user to resize the window, call `EnableResizing` **after** `CreateWindow`:
+
+```c
+void on_resize(int new_w, int new_h) {
+    // Reposition or resize elements to fit the new dimensions
+}
+
+CreateWindow(800, 600, "Resizable App", CLR_BLACK);
+EnableResizing(on_resize);
+```
+
+When the user resizes the window, the back-buffer pixmap is recreated at the new size and the registered callback is invoked with the new width and height. In scroll mode, the maximum height is capped at the virtual scroll canvas height, so horizontal expansion is permitted but vertical expansion cannot exceed the pre-declared scroll height.

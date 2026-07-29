@@ -1,0 +1,96 @@
+---
+title: "MainWindowLoop: Frame Tick and Render Loop"
+sidebarTitle: "MainWindowLoop"
+description: "MainWindowLoop(target_fps, on_every) runs the event-process → render → task-queue cycle at the requested FPS until the window is closed."
+---
+
+`MainWindowLoop` is the heart of every LWXGL application. Once called, it takes ownership of the calling thread and drives all event processing, element rendering, and scheduled task execution at the requested frame rate until the window close flag is set. It returns only after the final frame that detects the closing condition.
+
+---
+
+## `MainWindowLoop`
+
+```c
+void MainWindowLoop(int target_fps, void (*on_every)(int tick, float delta_time));
+```
+
+Enters the main run loop. Each iteration checks whether a full frame period has elapsed; if so, it processes all pending X11 events, renders the scene, fires the per-frame callback, and drains the queued-task list before sleeping for the remainder of the frame budget.
+
+<ParamField path="target_fps" type="int" required>
+  Target frame rate in frames per second (e.g. `60`). The frame period is computed as `1 000 000 / target_fps` microseconds. There is no upper-bound enforcement; setting a very high value reduces sleep time but does not disable the sleep logic entirely.
+</ParamField>
+
+<ParamField path="on_every" type="void (*)(int tick, float delta_time)" required>
+  Callback invoked once per rendered frame. Pass `NULL` if no per-frame callback is needed.
+
+  - `tick` — zero-based frame counter that increments by 1 each rendered frame.
+  - `delta_time` — seconds elapsed since the previous rendered frame, cast to `float`. Use this for frame-rate-independent animation and physics.
+</ParamField>
+
+---
+
+### Frame cycle
+
+Each rendered frame executes the following steps in order:
+
+1. **Handle X11 events** — all queued `XEvent` messages (pointer motion, button press/release, key press/release, resize, delete-window, etc.) are drained and dispatched.
+2. **`on_every` or elements** — depending on the rendering order set by `SetRenderingOrder`:
+   - `ORDER_ELEM_SECOND` (default, `0`): `on_every` is called **before** elements are rendered.
+   - `ORDER_ELEM_FIRST` (`1`): elements are rendered **before** `on_every` is called.
+3. **Render all visible elements** — each non-NULL, visible element is drawn to the back-buffer pixmap, then the pixmap is copied to the window.
+4. **Process queued tasks** — tasks registered with `NewQueuedTask` whose `target_time` has been reached are executed. Tasks with `TASK_RUN_EVERY` are re-queued automatically.
+5. **Sleep** — if the remaining frame time is greater than 2 ms, the loop sleeps for `(remaining − 1 ms)` then yields; otherwise it yields immediately with `std::this_thread::yield()`.
+
+### Exit condition
+
+The loop exits when the internal closing flag is set. The flag is set by `DeleteWindow` (either directly, or via the `WM_DELETE_WINDOW` protocol handler and the `EventAttachDelete` callback). After the loop exits, the caller is responsible for calling `TerminateWindow`.
+
+<Note>
+The `tick` counter is an `unsigned long long` internally but is passed to `on_every` as a plain `int`. For very long-running sessions (over ~2 billion frames at 60 FPS ≈ ~1.1 years of continuous uptime) the value will wrap. In practice this is not a concern.
+</Note>
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+#include <math.h>
+
+/* Simple animation: move a rect back and forth using delta_time */
+static float position_x = 0.0f;
+static float direction  = 200.0f; /* pixels per second */
+
+static void on_frame(int tick, float delta_time) {
+    /* Frame-rate-independent movement */
+    position_x += direction * delta_time;
+    if (position_x > 700.0f || position_x < 0.0f) {
+        direction = -direction;
+    }
+
+    /* Update rect position each frame */
+    ElemModifyBounds(0, (int)position_x, 100, 80, 40);
+
+    /* Print FPS estimate to console element every 60 frames */
+    if (tick % 60 == 0) {
+        float fps = (delta_time > 0.0f) ? 1.0f / delta_time : 0.0f;
+        ConsolePrint(1, "tick=%d  fps=%.1f\n", tick, fps);
+    }
+}
+
+int main(void) {
+    if (CreateWindow(800, 600, "Animation Demo", CLR_BLACK) != 0) return 1;
+
+    CreateRect(0, 0, 100, 80, 40, CLR_CYAN, CLR_BLUE);
+    CreateConsole(1, 10, 200, 40, 10, CLR_GRAY, CLR_WHITE);
+
+    MainWindowLoop(60, on_frame);
+
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Prefer `delta_time` over `tick` for any time-dependent animation or movement so that the behavior remains consistent if the actual frame rate drops below `target_fps`.
+</Tip>

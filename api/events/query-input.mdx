@@ -1,0 +1,166 @@
+---
+title: "Querying Mouse, Keyboard, Modals, and Scroll State"
+sidebarTitle: "Query Input"
+description: "Poll current mouse position and button state, query which keys are held down, check modal status, and read the current scroll offset."
+---
+
+In addition to event-driven callbacks, LWXGL exposes a set of synchronous query functions that let you poll the current input state at any point in your `on_every` frame callback. This is especially useful for smooth, frame-rate-driven movement — rather than reacting to a single key-press event, you can check `QueryKeyDown` every frame and move an object by a fixed delta multiplied by the frame delta time. All query functions are safe to call from any thread that has already called `MainWindowLoop`, but the values they return reflect the state as of the most recently processed X11 event batch.
+
+## `QueryMouse`
+
+Fills three output pointers with the current mouse position and held button state.
+
+```c
+void QueryMouse(int* x, int* y, int* btn);
+```
+
+Coordinates are relative to the top-left of the window. When the cursor is outside the window, `x` and `y` are set to `-1`. `btn` holds the button that is currently held down (press without release); it is `0` when no button is held.
+
+<ParamField path="x" type="int*" required>
+  Pointer to receive the current cursor X coordinate, or `-1` if the cursor is outside the window.
+</ParamField>
+
+<ParamField path="y" type="int*" required>
+  Pointer to receive the current cursor Y coordinate, or `-1` if the cursor is outside the window.
+</ParamField>
+
+<ParamField path="btn" type="int*" required>
+  Pointer to receive the held button index. `0` = none held, `1` = left, `2` = middle, `3` = right, `4` = scroll-up held, `5` = scroll-down held.
+</ParamField>
+
+---
+
+## `QueryKeyboard`
+
+Returns a pointer to LWXGL's internal 8-slot array of currently held key codes.
+
+```c
+unsigned char* QueryKeyboard();
+```
+
+LWXGL tracks up to 8 simultaneous key presses. Each slot contains the translated character code of a held key (using the same values as the `EventAttachKey` callback), or `0` if the slot is unused. The array is owned by LWXGL — do not free or write to it.
+
+**Returns:** Pointer to an `unsigned char[8]` array of currently held character codes.
+
+<Note>
+For checking a single specific key, prefer `QueryKeyDown` — it is more readable and avoids manual array iteration.
+</Note>
+
+---
+
+## `QueryKeyDown`
+
+Returns whether a specific key is currently held.
+
+```c
+int QueryKeyDown(int ch);
+```
+
+Searches the internal 8-slot pressed-keys array for `ch`. Works with any value that could appear in the `EventAttachKey` callback: printable ASCII codes, `KEY_LEFT` / `KEY_RIGHT` / `KEY_UP` / `KEY_DOWN`, or `KEY_FN + N` for F-keys.
+
+<ParamField path="ch" type="int" required>
+  The character code or `KEY_*` constant to query.
+</ParamField>
+
+**Returns:** `1` if the key is currently held, `0` otherwise.
+
+---
+
+## `QueryModalOpen`
+
+Returns whether a modal dialog is currently visible.
+
+```c
+int QueryModalOpen();
+```
+
+Returns `1` if a modal spawned with `SpawnModal` is active, `0` otherwise. While a modal is open, `EventAttachKey` and `EventAttachClick` callbacks are suppressed, and most element interactions are disabled. Use this function to pause game logic or animations while the user interacts with a dialog.
+
+**Returns:** `1` if a modal is open, `0` if not.
+
+---
+
+## `QueryScroll`
+
+Returns the current vertical scroll offset of the virtual canvas.
+
+```c
+int QueryScroll();
+```
+
+Only meaningful when scroll mode has been enabled via `ReserveScroll`. The offset is in pixels, where `0` means the top of the virtual canvas is aligned with the window's top edge. The maximum value is `virtual_canvas_height − window_height`.
+
+**Returns:** Current scroll offset in pixels. Always `0` if scroll mode is not active.
+
+---
+
+## `GetElapsedTime`
+
+Returns the total time elapsed since `MainWindowLoop` was first called.
+
+```c
+double GetElapsedTime();
+```
+
+The elapsed time accumulates the per-frame delta measured between frame start timestamps. It does not rely on wall-clock time after startup — only the time spent inside the loop is counted. Useful for driving animations, cooldowns, and scheduled comparisons without managing your own timer variables.
+
+**Returns:** Seconds elapsed as a `double`. Starts at `0.0` when `MainWindowLoop` begins.
+
+---
+
+## Code example
+
+```c
+#include "libLWXGL.h"
+
+#define PLAYER_SPEED 120.0f  // pixels per second
+
+static float player_x = 100.0f;
+static float player_y = 100.0f;
+
+void on_every(int tick, float dt) {
+    // Smooth keyboard-driven movement
+    if (QueryKeyDown(KEY_LEFT))  player_x -= PLAYER_SPEED * dt;
+    if (QueryKeyDown(KEY_RIGHT)) player_x += PLAYER_SPEED * dt;
+    if (QueryKeyDown(KEY_UP))    player_y -= PLAYER_SPEED * dt;
+    if (QueryKeyDown(KEY_DOWN))  player_y += PLAYER_SPEED * dt;
+
+    // Mouse cursor indicator
+    int mx, my, mbtn;
+    QueryMouse(&mx, &my, &mbtn);
+
+    if (mx >= 0) {
+        // Draw a crosshair at the cursor position
+        ImmediateLine(mx - 6, my, mx + 6, my, CLR_WHITE);
+        ImmediateLine(mx, my - 6, mx, my + 6, CLR_WHITE);
+
+        if (mbtn == 1) {
+            // Left button held — highlight cursor in yellow
+            ImmediateRect(mx - 4, my - 4, 8, 8, CLR_YELLOW, CLR_NONE);
+        }
+    }
+
+    // Pause display when a modal is open
+    if (QueryModalOpen()) {
+        ImmediateText(10, 10, "[ paused ]", CLR_LGRAY);
+        return;
+    }
+
+    // Draw the player square
+    ImmediateRect((int)player_x, (int)player_y, 12, 12, CLR_NONE, CLR_LGREEN);
+
+    // Elapsed time HUD
+    ImmediateTextF(4, 4, CLR_LGRAY, "t = %.2fs", GetElapsedTime());
+}
+
+int main(void) {
+    CreateWindow(400, 300, "Query Demo", CLR_BLACK);
+    MainWindowLoop(60, on_every);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Multiply movement deltas by the `dt` parameter passed to `on_every` rather than by a fixed constant so that movement remains consistent regardless of the configured `target_fps`.
+</Tip>

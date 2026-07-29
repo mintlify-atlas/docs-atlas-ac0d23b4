@@ -1,20 +1,59 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "LWXGL: Lightweight X11 Graphics Library"
+sidebarTitle: "Home"
+description: "LWXGL is a C/C++ shared library that wraps Xlib to give you a simple, element-based GUI toolkit with image rendering, OpenGL surfaces, and event callbacks."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+LWXGL (Lightweight X11 Graphics Library) is a single shared library (`libLWXGL.so`) that makes it easy to build native Linux GUI applications directly on top of X11. It provides a retained-mode element system for buttons, text labels, inputs, consoles, and images alongside an immediate-mode drawing API — all backed by a fixed 16-color palette and a double-buffered render loop. For applications that need hardware acceleration, LWXGL can host a GLX-backed OpenGL surface element directly inside the window.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Installation" icon="wrench" href="/installation">
+    Build and install `libLWXGL.so` on your Linux system in two commands.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Create your first window, add a button, and run the event loop in under 30 lines of C.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/window">
+    Understand windows, elements, the color palette, and the event model before diving deeper.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/windowing/create-window">
+    Complete reference for every public function exported by `libLWXGL.h`.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## What LWXGL provides
+
+<CardGroup cols={2}>
+  <Card title="Retained Elements" icon="layer-group" href="/concepts/elements">
+    Text, buttons, inputs, checkboxes, consoles, images, rectangles, and ellipses — each addressed by a developer-assigned integer ID.
+  </Card>
+  <Card title="Immediate Drawing" icon="pen" href="/api/drawing/immediates">
+    Draw text, rectangles, ellipses, and lines directly into the back-buffer on every frame without managing element IDs.
+  </Card>
+  <Card title="Image Canvas & Primitives" icon="image" href="/guides/images-and-drawing">
+    Pixel-level image elements with built-in rect, circle, line, triangle, and sprite (RLE) drawing primitives.
+  </Card>
+  <Card title="TGA & XBM Images" icon="file-image" href="/guides/tga-and-xbm">
+    Load 8-bit indexed TGA files (raw and RLE) and monochrome XBM bitmaps with optional palette remapping.
+  </Card>
+  <Card title="OpenGL Surfaces" icon="cube" href="/guides/opengl">
+    Embed a GLX-backed OpenGL pixmap element inside any LWXGL window for hardware-accelerated rendering.
+  </Card>
+  <Card title="Event Callbacks" icon="bolt" href="/concepts/events">
+    Register callbacks for keyboard, mouse, window close, resize, and scroll events.
+  </Card>
+</CardGroup>
+
+## Getting started in three steps
+
+<Steps>
+  <Step title="Build and install">
+    Clone the repository and run `make && sudo make install` to build `libLWXGL.so` and copy it and the header to the system paths.
+  </Step>
+  <Step title="Include the header and link">
+    Add `#include <libLWXGL.h>` to your source file and compile with `-lLWXGL -lX11 -lGL`.
+  </Step>
+  <Step title="Create a window and run the loop">
+    Call `CreateWindow`, add your elements, then enter `MainWindowLoop` — LWXGL handles rendering and events on every frame tick.
+  </Step>
+</Steps>

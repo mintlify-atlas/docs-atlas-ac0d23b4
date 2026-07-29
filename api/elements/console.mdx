@@ -1,0 +1,140 @@
+---
+title: "Console Element: Scrollable Text Output"
+sidebarTitle: "Console"
+description: "Create a scrollable terminal-style console element that accepts printf-style output and supports mouse-wheel scrolling."
+---
+
+The console element provides a self-contained, scrollable terminal window inside your LWXGL application. It accepts `printf`-style formatted output through `ConsolePrint`, maintains an internal line buffer, renders the visible rows each frame, and handles mouse-wheel scrolling automatically when the cursor is over the element. Pressing **Space** while hovering the console jumps the view to the most recent output.
+
+---
+
+## `CreateConsole`
+
+```c
+void CreateConsole(int id, int x, int y, int cols, int rows, int con_clr, int txt_clr);
+```
+
+Creates a new console element. The element's pixel dimensions are computed from the character grid size: width = `cols * 9 + 17` pixels (9 px per character column plus a 17 px scrollbar gutter), height = `rows * 15 + 10` pixels (15 px per character row plus 10 px of padding).
+
+<ParamField path="id" type="int" required>
+  Unique element ID.
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the console's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the console's top-left corner in pixels.
+</ParamField>
+
+<ParamField path="cols" type="int" required>
+  Number of visible character columns. Determines the element width as `cols * 9 + 17`.
+</ParamField>
+
+<ParamField path="rows" type="int" required>
+  Number of visible text rows. Determines the element height as `rows * 15 + 10`.
+</ParamField>
+
+<ParamField path="con_clr" type="int" required>
+  Background fill color for the console panel — palette index (0–15) or `CLR_*` constant.
+</ParamField>
+
+<ParamField path="txt_clr" type="int" required>
+  Text foreground color for all output lines — palette index (0–15) or `CLR_*` constant.
+</ParamField>
+
+---
+
+## `ConsolePrint`
+
+```c
+void ConsolePrint(int id, const char* format, ...);
+```
+
+Appends formatted text to the console's internal string buffer using `vasprintf` (supporting the full `printf` format string syntax). If the scroll position was at the bottom before the new text arrived, the console automatically scrolls down to keep the newest content visible.
+
+<ParamField path="id" type="int" required>
+  ID of an existing console element.
+</ParamField>
+
+<ParamField path="format" type="const char*" required>
+  `printf`-style format string, followed by any required arguments.
+</ParamField>
+
+<Note>
+Each call appends to the existing buffer — newlines in the format string create new visible rows. There is no built-in line limit; the full history is retained in memory for the session.
+</Note>
+
+---
+
+## `ConsoleClear`
+
+```c
+void ConsoleClear(int id);
+```
+
+Clears all text from the console's internal buffer, resets the total line count to zero, and returns the scroll position to the top.
+
+<ParamField path="id" type="int" required>
+  ID of the console element to clear.
+</ParamField>
+
+---
+
+### Automatic scrolling behavior
+
+- **Mouse-wheel over the console:** LWXGL's event handler automatically adjusts the console's scroll offset when a scroll event occurs while the cursor is inside the element's bounding box. No application code is required.
+- **Auto-scroll on new output:** If the scroll position is at the bottom (i.e. the last line is visible) when `ConsolePrint` is called, the console scrolls down to show the new content. If the user has scrolled up to review earlier output, the position is preserved.
+- **Space to jump to bottom:** Pressing Space while hovering the console instantly scrolls to the latest line.
+
+---
+
+## Example
+
+```c
+#include "libLWXGL.h"
+
+#define ID_LOG 0
+
+static int event_count = 0;
+
+static void on_key(int key) {
+    ConsolePrint(ID_LOG, "Key pressed: %d\n", key);
+    event_count++;
+}
+
+static void on_click(int x, int y, int btn) {
+    ConsolePrint(ID_LOG, "Click btn=%d at (%d, %d)\n", btn, x, y);
+    event_count++;
+}
+
+static void on_frame(int tick, float dt) {
+    (void)dt;
+    /* Print a status line every 5 seconds (300 frames at 60 fps) */
+    if (tick > 0 && tick % 300 == 0) {
+        ConsolePrint(ID_LOG, "--- %d events in last 5s ---\n", event_count);
+        event_count = 0;
+    }
+}
+
+int main(void) {
+    if (CreateWindow(600, 400, "Console Demo", CLR_BLACK) != 0) return 1;
+
+    /* 60-column, 20-row console at (10, 10) */
+    CreateConsole(ID_LOG, 10, 10, 60, 20, CLR_GRAY, CLR_WHITE);
+
+    ConsolePrint(ID_LOG, "LWXGL Event Logger started.\n");
+
+    EventAttachKey(on_key);
+    EventAttachClick(on_click);
+
+    MainWindowLoop(60, on_frame);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Size the console using the column and row counts rather than trying to match pixel dimensions — the pixel size is always derivable as `cols * 9 + 17` wide and `rows * 15 + 10` tall.
+</Tip>

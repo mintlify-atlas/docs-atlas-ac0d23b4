@@ -1,0 +1,281 @@
+---
+title: "Image Primitive Drawing Functions"
+sidebarTitle: "Primitives"
+description: "Draw rectangles, circles, lines, triangles, and RLE sprites directly into image element pixel buffers using palette-indexed colors."
+---
+
+LWXGL's primitive drawing functions write palette-indexed color values directly into an `ImageElement`'s pixel data buffer. Because they operate on raw memory rather than the X11 display, they are fast to call in tight loops and let you build up complex scenes pixel-by-pixel. Once you have finished drawing, call `UpdateImage(id)` to detect changed pixels and flush them to the backing X11 pixmap — changes are not visible on screen until that call is made. All coordinates are relative to the top-left corner of the image element, and every function silently clips pixels that fall outside the element's bounds.
+
+## `PrimitiveRect`
+
+Draws a filled rectangle with an optional border into an image element.
+
+```c
+void PrimitiveRect(int id, int x, int y, int w, int h, int fg, int bg);
+```
+
+The left, right, top, and bottom edges are drawn with `fg`; every interior pixel uses `bg`. Pass `CLR_NONE` (`-1`) for either parameter to omit that layer — passing `CLR_NONE` for `fg` but a valid `bg` draws a filled rectangle with no visible border, while passing `CLR_NONE` for both is a no-op.
+
+<Note>
+When `fg` is `CLR_NONE` the implementation promotes `bg` to fill the border pixels as well, so the border is never left transparent when a fill color is provided.
+</Note>
+
+<ParamField path="id" type="int" required>
+  ID of the target image element (previously created with `CreateImage`).
+</ParamField>
+
+<ParamField path="x" type="int" required>
+  X coordinate of the rectangle's top-left corner, relative to the image element origin.
+</ParamField>
+
+<ParamField path="y" type="int" required>
+  Y coordinate of the rectangle's top-left corner, relative to the image element origin.
+</ParamField>
+
+<ParamField path="w" type="int" required>
+  Width of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="h" type="int" required>
+  Height of the rectangle in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Palette index (0–15) for the border color, or `CLR_NONE` (`-1`) to omit the border.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Palette index (0–15) for the fill color, or `CLR_NONE` (`-1`) to omit the fill.
+</ParamField>
+
+---
+
+## `PrimitiveCircle`
+
+Draws a filled circle centered at a given point.
+
+```c
+void PrimitiveCircle(int id, int cx, int cy, int r, int fg, int bg);
+```
+
+The border is approximated via an integer distance test: a pixel is considered on the border when `|dx² + dy² − r²| < r`, giving a one-pixel-wide anti-aliased ring without floating-point math. Interior pixels (where `dx² + dy² ≤ r²`) receive `bg`. If `fg` and `bg` overlap on the same pixel, `fg` takes priority.
+
+<ParamField path="id" type="int" required>
+  ID of the target image element.
+</ParamField>
+
+<ParamField path="cx" type="int" required>
+  X coordinate of the circle center.
+</ParamField>
+
+<ParamField path="cy" type="int" required>
+  Y coordinate of the circle center.
+</ParamField>
+
+<ParamField path="r" type="int" required>
+  Radius in pixels.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Palette index for the border, or `CLR_NONE` to omit.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Palette index for the fill, or `CLR_NONE` to omit.
+</ParamField>
+
+---
+
+## `PrimitiveLine`
+
+Draws a straight line between two points using a DDA (Digital Differential Analyzer) algorithm.
+
+```c
+void PrimitiveLine(int id, int x1, int y1, int x2, int y2, int color);
+```
+
+The function computes the dominant axis (whichever of `|dx|` or `|dy|` is larger) and steps one pixel at a time, interpolating the minor axis linearly. Each computed pixel coordinate is rounded to the nearest integer before being written. Pixels that fall outside the image bounds are skipped without error.
+
+<ParamField path="id" type="int" required>
+  ID of the target image element.
+</ParamField>
+
+<ParamField path="x1" type="int" required>
+  X coordinate of the line start point.
+</ParamField>
+
+<ParamField path="y1" type="int" required>
+  Y coordinate of the line start point.
+</ParamField>
+
+<ParamField path="x2" type="int" required>
+  X coordinate of the line end point.
+</ParamField>
+
+<ParamField path="y2" type="int" required>
+  Y coordinate of the line end point.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index (0–15) for the line color.
+</ParamField>
+
+---
+
+## `PrimitiveTriangle`
+
+Draws a filled triangle defined by three vertices, with an optional outline.
+
+```c
+void PrimitiveTriangle(int id, int x1, int y1, int x2, int y2, int x3, int y3, int fg, int bg);
+```
+
+The fill is rasterized using an edge-function (barycentric) test over the axis-aligned bounding box of the three vertices — both clockwise and counter-clockwise winding orders are accepted. When `fg` is not `CLR_NONE`, the three edges are drawn on top of the fill using `PrimitiveLine`.
+
+<ParamField path="id" type="int" required>
+  ID of the target image element.
+</ParamField>
+
+<ParamField path="x1" type="int" required>
+  X coordinate of the first vertex.
+</ParamField>
+
+<ParamField path="y1" type="int" required>
+  Y coordinate of the first vertex.
+</ParamField>
+
+<ParamField path="x2" type="int" required>
+  X coordinate of the second vertex.
+</ParamField>
+
+<ParamField path="y2" type="int" required>
+  Y coordinate of the second vertex.
+</ParamField>
+
+<ParamField path="x3" type="int" required>
+  X coordinate of the third vertex.
+</ParamField>
+
+<ParamField path="y3" type="int" required>
+  Y coordinate of the third vertex.
+</ParamField>
+
+<ParamField path="fg" type="int" required>
+  Palette index for the border lines, or `CLR_NONE` to omit.
+</ParamField>
+
+<ParamField path="bg" type="int" required>
+  Palette index for the filled interior, or `CLR_NONE` to omit.
+</ParamField>
+
+---
+
+## `PrimitiveSprite`
+
+Renders an RLE-encoded monochrome sprite into an image element at a given position and scale.
+
+```c
+void PrimitiveSprite(int id, int sx, int sy, int color, const char* sprite, int scale);
+```
+
+The sprite string is decoded character-by-character. Each logical pixel is rendered as a `scale × scale` block, so a `scale` of 2 produces a sprite twice as wide and tall as its definition. The foreground color index is supplied via `color`; background pixels (`'.'`) are always written as palette index `0` (`CLR_BLACK`).
+
+<ParamField path="id" type="int" required>
+  ID of the target image element.
+</ParamField>
+
+<ParamField path="sx" type="int" required>
+  X coordinate of the top-left pixel of the sprite.
+</ParamField>
+
+<ParamField path="sy" type="int" required>
+  Y coordinate of the top-left pixel of the sprite.
+</ParamField>
+
+<ParamField path="color" type="int" required>
+  Palette index for foreground (`'#'`) pixels.
+</ParamField>
+
+<ParamField path="sprite" type="const char*" required>
+  Null-terminated RLE sprite string (see format table below).
+</ParamField>
+
+<ParamField path="scale" type="int" required>
+  Integer pixel scale factor. `1` = 1:1, `2` = 2× magnification, etc.
+</ParamField>
+
+### Sprite RLE format
+
+| Token | Meaning |
+|-------|---------|
+| `#` | Draw one foreground pixel (palette index `color`) and advance X by `scale`. |
+| `.` | Draw one background pixel (palette index `0` / `CLR_BLACK`) and advance X by `scale`. |
+| `$` | Move X back to `sx` and advance Y by `scale` (next row). |
+| `>` | Skip (advance X) without drawing — useful for transparent gaps. |
+| `0`–`9` | Prefix digit(s) — sets the repeat count for the following token. |
+| `[…]` | Group: repeat the bracketed sub-expression. A numeric prefix sets the repeat count (default 1). Groups may be nested. |
+
+**Examples:**
+
+| RLE string | Result |
+|------------|--------|
+| `3#` | Three consecutive foreground pixels. |
+| `2.` | Two consecutive background pixels. |
+| `3#2.$` | Three foreground pixels, two background pixels, then newline. |
+| `2[3#.]` | The sequence `3#.` repeated twice → `3#.3#.`. |
+| `>5` | Advance five pixels without drawing (transparent gap). |
+
+<Note>
+The `>` token with a numeric prefix (`5>`) advances `count × scale` pixels, making it efficient for transparent horizontal gaps in icons or HUD sprites.
+</Note>
+
+---
+
+## Code example
+
+```c
+#include "libLWXGL.h"
+
+// Sprite: a simple 5×5 arrow pointing right
+static const char* arrow_sprite =
+    ".#...$"   // row 0
+    "..##.$"   // row 1
+    "#####$"   // row 2
+    "..##.$"   // row 3
+    ".#...";   // row 4
+
+void build_canvas(void) {
+    // Create a 200×200 image element at position (20, 20)
+    CreateImage(1, 20, 20, 200, 200);
+
+    // Filled cyan rectangle with a white border
+    PrimitiveRect(1, 10, 10, 80, 50, CLR_WHITE, CLR_CYAN);
+
+    // Red filled circle, no border
+    PrimitiveCircle(1, 140, 40, 30, CLR_NONE, CLR_RED);
+
+    // Yellow diagonal line
+    PrimitiveLine(1, 0, 100, 199, 199, CLR_YELLOW);
+
+    // Green filled triangle, magenta border
+    PrimitiveTriangle(1, 100, 60, 60, 140, 140, 140, CLR_MAGENTA, CLR_GREEN);
+
+    // White arrow sprite at 2× scale
+    PrimitiveSprite(1, 150, 10, CLR_WHITE, arrow_sprite, 2);
+
+    // Push all changes to screen
+    UpdateImage(1);
+}
+
+int main(void) {
+    CreateWindow(240, 240, "Primitives Demo", CLR_BLACK);
+    build_canvas();
+    MainWindowLoop(30, NULL);
+    TerminateWindow();
+    return 0;
+}
+```
+
+<Tip>
+Call `ClearImage(id, CLR_BLACK)` before redrawing to reset the pixel buffer to a solid background color, then re-invoke the primitive functions and finish with `UpdateImage(id)`.
+</Tip>
